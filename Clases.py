@@ -52,7 +52,7 @@ class Obra:
         self.categoria = categoria      
         self.tipo_obra = tipo_obra      
         self.editorial = editorial      
-        self.autores = [] #Esta linea es porque una obra puede tener muchos autores
+        self.autores = [] #Esta linea es porque una obra puede tener muchos autores, se iran agregando mediante el metodo agregar_autor
 
     def agregar_autor(self, autor):
         self.autores.append(autor)
@@ -64,15 +64,15 @@ class Ejemplar:
         Ejemplar.contador_id += 1
         self.obra = obra
         self.localizacion = localizacion
-        self.disponible = True
+        self.disponible = True      #Cada que se cree un ejemplar su estado de disponibilidad sera siempre verdadero
 
-    def registrar_prestamo_ejemplar(self):
-        if self.disponible:
-            self.disponible = False
-            return True
+    def registrar_prestamo_ejemplar(self):      
+        if self.disponible:     #Como si esta disponible entonces se registra el prestamo por lo que se debe cambiar el estado de ese ejemplar a que no estara disponible
+            self.disponible = False     #Aqui se cambia a False porque se presto ese ejemplar
+            return True     #Este True es como un activador que le dice al metodo de la clase prestamo si el ejemplar esta disponible para ser prestado
         else:
             print(f"El ejemplar {self.num_consecutivo} ya está prestado.")
-            return False
+            return False    #Es el activador que le dice a la funcion que no puede ser prestado
         
 #CLASES DE USUARIO Y PERSONAL
 class Empleado:
@@ -104,8 +104,8 @@ class Prestamo:
         self.empleado = empleado
         self.ejemplares_prestados = []
         self.fecha_salida = datetime.now()
-        self.fecha_limite = self.fecha_salida + timedelta(days=3)   #Aqui se calculan los 3 dias como limite del prestamo
-        self.fecha_devolucion = None
+        self.fecha_limite = self.fecha_salida + timedelta(days=3)   #Aqui se calcula la fecha limite en que debe ser entregado tomando en cuenta los 3 dias como limite del prestamo
+        self.fecha_devolucion = None    #Este valor se lo asignara el admin en el momento que el usuario devuelva el ejemplar
 
     def agregar_ejemplar_a_prestamo(self, ejemplar):
         if ejemplar.registrar_prestamo_ejemplar():
