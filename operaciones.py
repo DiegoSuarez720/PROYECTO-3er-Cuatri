@@ -2195,7 +2195,7 @@ class GestorMultas(GestorBase):
                 INNER JOIN prestamo p ON d.prestamo = p.folio
                 LEFT JOIN multa m ON m.devolucion = d.id_devolucion
                 WHERE d.fecha_devolucion > p.fecha_limite
-                  AND m.id_multa IS NULL
+                  AND m.multa IS NULL
                 ORDER BY d.id_devolucion
             """
             cursor.execute(sql_pend)
@@ -2236,7 +2236,7 @@ class GestorMultas(GestorBase):
         cursor = self.db.obtener_cursor()
         try:
             sql = """
-                SELECT m.id_multa, d.prestamo,
+                SELECT m.multa AS id_multa, d.prestamo,
                        CONCAT_WS(' ', u.nombre_pila, u.primer_ap, u.segundo_ap) AS usuario,
                        d.obra, o.titulo, d.ejemplar,
                        p.fecha_limite, d.fecha_devolucion,
@@ -2249,7 +2249,7 @@ class GestorMultas(GestorBase):
             """
             if solo_pendientes:
                 sql += " WHERE m.estado = 'Pendiente'"
-            sql += " ORDER BY m.id_multa"
+            sql += " ORDER BY m.multa"
             cursor.execute(sql)
             return cursor.fetchall()
         finally:
@@ -2259,7 +2259,7 @@ class GestorMultas(GestorBase):
         cursor = self.db.obtener_cursor()
         try:
             cursor.execute(
-                "SELECT id_multa, devolucion, estado, total FROM multa WHERE id_multa = %s",
+                "SELECT multa AS id_multa, devolucion, estado, total FROM multa WHERE multa = %s",
                 (id_multa,),
             )
             return cursor.fetchone()
@@ -2267,11 +2267,11 @@ class GestorMultas(GestorBase):
             cursor.close()
 
     def marcar_pagada(self, id_multa):
-        """Marca una multa pendiente como 'Pagada' usando únicamente su ID de multa."""
+        """Marca una multa pendiente como 'Pagada' usando únicamente su número de multa."""
         cursor = self.db.obtener_cursor()
         try:
             cursor.execute(
-                "UPDATE multa SET estado = 'Pagada' WHERE id_multa = %s AND estado = 'Pendiente'",
+                "UPDATE multa SET estado = 'Pagada' WHERE multa = %s AND estado = 'Pendiente'",
                 (id_multa,),
             )
             afectados = cursor.rowcount
