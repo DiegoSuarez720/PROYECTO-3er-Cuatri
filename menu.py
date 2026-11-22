@@ -1,4 +1,4 @@
-"""Archivo principal con los menús en terminal (CLI estándar) para Registros y Catálogos."""
+"""Archivo principal con los menús en terminal (CLI estándar) y navegación paso a paso."""
 
 from datetime import timedelta
 from mysql.connector import Error
@@ -27,7 +27,9 @@ from operaciones import (
 )
 from utilidades import (
     OperacionCancelada,
+    PasoAnterior,
     confirmar,
+    formatear_fecha,
     limpiar_pantalla,
     mostrar_aviso,
     mostrar_ayuda_cancelar,
@@ -71,6 +73,82 @@ class AplicacionBiblioteca:
             print("\nConexión cerrada. ¡Hasta luego!")
 
     # ==========================================================
+    # UTILIDADES INTERNAS DE NAVEGACIÓN
+    # ==========================================================
+    def _confirmar_continuar(self, etiqueta):
+        """Pregunta si desea registrar otro elemento; 'atras'/'cancelar' regresan al menú."""
+        try:
+            return confirmar(etiqueta)
+        except (OperacionCancelada, PasoAnterior):
+            return False
+
+    def _capturar_telefonos(self, entidad, telefonos_actuales=None):
+        """Captura al menos un teléfono obligatorio con retroceso paso a paso."""
+        telefonos = list(telefonos_actuales) if telefonos_actuales else []
+        while True:
+            if not telefonos:
+                tel = pedir_texto(
+                    f"Teléfono principal de {entidad} (obligatorio, máx. 20)",
+                    max_len=20,
+                )
+                telefonos.append(tel)
+            try:
+                agregar_otro = confirmar(f"¿Deseas agregar OTRO teléfono para {entidad}?")
+            except PasoAnterior:
+                quitado = telefonos.pop()
+                mostrar_aviso(f"Regresando al paso anterior (se quitó el teléfono '{quitado}').")
+                continue
+
+            if not agregar_otro:
+                return telefonos
+
+            try:
+                tel = pedir_texto("Teléfono adicional (máx. 20)", max_len=20)
+            except PasoAnterior:
+                mostrar_aviso("Regresando a la confirmación de teléfonos...")
+                continue
+
+            if tel in telefonos:
+                mostrar_aviso("Ese teléfono ya fue agregado a la lista.")
+            else:
+                telefonos.append(tel)
+
+    def _capturar_lista_asociada(
+        self, etiqueta_otro, etiqueta_plural, fn_seleccionar, ids_actuales=None
+    ):
+        """Captura 1 o más IDs (autores o editoriales) permitiendo retroceder paso a paso."""
+        ids = list(ids_actuales) if ids_actuales else []
+        if ids:
+            print(f"\n{etiqueta_plural.capitalize()} seleccionados actualmente: {ids}")
+
+        while True:
+            if not ids:
+                nuevo_id = fn_seleccionar()
+                ids.append(nuevo_id)
+            try:
+                agregar_otro = confirmar(f"¿Deseas agregar {etiqueta_otro} a esta obra?")
+            except PasoAnterior:
+                quitado = ids.pop()
+                mostrar_aviso(
+                    f"Regresando al paso anterior (se quitó el ID #{quitado} de {etiqueta_plural})."
+                )
+                continue
+
+            if not agregar_otro:
+                return ids
+
+            try:
+                nuevo_id = fn_seleccionar()
+            except PasoAnterior:
+                mostrar_aviso(f"Regresando a la confirmación de {etiqueta_plural}...")
+                continue
+
+            if nuevo_id in ids:
+                mostrar_aviso("Ese registro ya fue agregado a esta obra.")
+            else:
+                ids.append(nuevo_id)
+
+    # ==========================================================
     # INICIO DE SESIÓN
     # ==========================================================
     def iniciar_sesion(self):
@@ -80,15 +158,17 @@ class AplicacionBiblioteca:
                 "SISTEMA DE PRÉSTAMOS BIBLIOTECARIOS",
                 "Inicio de sesión de empleados (escribe 'salir' en usuario para terminar)",
             )
-            usuario = pedir_texto("Usuario", max_len=30, permitir_cancelar=False)
+            usuario = pedir_texto(
+                "Usuario", max_len=30, permitir_cancelar=False, permitir_atras=False
+            )
             if usuario.lower() in ("salir", "cancelar"):
                 return False
 
             try:
                 contrasena = pedir_texto(
-                    "Contraseña (o escribe 'cancelar' para cambiar usuario)", max_len=50
+                    "Contraseña (escribe 'atras' para cambiar de usuario)", max_len=50
                 )
-            except OperacionCancelada:
+            except (OperacionCancelada, PasoAnterior):
                 continue
 
             try:
@@ -127,7 +207,11 @@ class AplicacionBiblioteca:
             print("0. Cerrar sesión\n")
 
             opcion = pedir_entero(
-                "Selecciona una opción", minimo=0, maximo=7, permitir_cancelar=False
+                "Selecciona una opción",
+                minimo=0,
+                maximo=7,
+                permitir_cancelar=False,
+                permitir_atras=False,
             )
 
             if opcion == 1:
@@ -149,6 +233,577 @@ class AplicacionBiblioteca:
                 break
 
     # ==========================================================
+    # HELPERS DE SELECCIÓN O ALTA AL VUELO (CON RETROCESO PASO A PASO)
+    # ==========================================================
+    def _crear_pais_rapido(self):
+        print("\n--- Nuevo País (escribe 'atras' para volver a la lista) ---")
+        clave = None
+        nombre = None
+        paso = 0
+
+        while paso < 2:
+            try:
+                if paso == 0:
+                    val = pedir_texto(
+                        "Clave de país (ej. MEX, ESP, USA; máx. 5)", max_len=5
+                    ).upper()
+                    if self.catalogos.existe_pais(val):
+                        mostrar_error(f"Ya existe un país registrado con la clave '{val}'.")
+                        continue
+                    clave = val
+                    paso = 1
+                elif paso == 1:
+                    val = pedir_texto("Nombre del país", max_len=50)
+                    if self.catalogos.existe_pais_nombre(val):
+                        mostrar_error(f"Ya existe un país registrado con el nombre '{val}'.")
+                        continue
+                    nombre = val
+                    paso = 2
+            except PasoAnterior:
+                if paso == 0:
+                    mostrar_aviso("Regresando a la selección de países...")
+                    return None
+                paso -= 1
+                mostrar_aviso("Regresando al campo anterior...")
+
+        try:
+            self.catalogos.crear_pais(Pais(clave, nombre))
+            mostrar_exito(f"País '{nombre}' ({clave}) guardado en la base de datos.")
+            return clave
+        except (ValueError, Error) as e:
+            mostrar_error(f"Error al guardar país: {e}")
+            return None
+
+    def _seleccionar_o_crear_pais(self):
+        while True:
+            paises = self.catalogos.listar_paises()
+            if not paises:
+                mostrar_aviso("No hay países registrados. Registra uno nuevo para la editorial:")
+                clave = self._crear_pais_rapido()
+                if clave is not None:
+                    return clave
+                raise PasoAnterior()
+
+            self._mostrar_paises(paises)
+            entrada = pedir_texto(
+                "Clave del país (escribe 'nuevo' para registrar uno, o 'atras' para volver)",
+                max_len=20,
+            )
+            if entrada.lower() in ("nuevo", "nueva"):
+                clave = self._crear_pais_rapido()
+                if clave is not None:
+                    return clave
+                continue
+
+            clave = entrada.upper()
+            if not self.catalogos.existe_pais(clave):
+                mostrar_error("Esa clave de país no existe. Elige una de la tabla o escribe 'nuevo'.")
+                continue
+            return clave
+
+    def _crear_tipo_rapido(self):
+        print("\n--- Nuevo Tipo de Obra (escribe 'atras' para volver a la lista) ---")
+        while True:
+            try:
+                nombre = pedir_texto("Tipo de obra (ej. Libro, Revista, Tesis)", max_len=50)
+            except PasoAnterior:
+                mostrar_aviso("Regresando a la selección de tipos de obra...")
+                return None
+
+            if self.catalogos.existe_tipo_nombre(nombre):
+                mostrar_error(f"Ya existe un tipo de obra registrado como '{nombre}'.")
+                continue
+
+            try:
+                nuevo_id = self.catalogos.crear_tipo(TipoObra(nombre))
+                mostrar_exito(f"Tipo de obra '{nombre}' guardado con ID #{nuevo_id}.")
+                return nuevo_id
+            except (ValueError, Error) as e:
+                mostrar_error(f"Error al guardar tipo de obra: {e}")
+                return None
+
+    def _seleccionar_o_crear_tipo(self):
+        while True:
+            tipos = self.catalogos.listar_tipos()
+            if not tipos:
+                mostrar_aviso("No hay tipos de obra registrados. Registra uno nuevo:")
+                nuevo_id = self._crear_tipo_rapido()
+                if nuevo_id is not None:
+                    return nuevo_id
+                raise PasoAnterior()
+
+            self._mostrar_tipos(tipos)
+            entrada = pedir_texto(
+                "ID del tipo de obra (escribe 'nuevo' para registrar uno, o 'atras' para volver)",
+                max_len=20,
+            )
+            if entrada.lower() in ("nuevo", "nueva"):
+                nuevo_id = self._crear_tipo_rapido()
+                if nuevo_id is not None:
+                    return nuevo_id
+                continue
+
+            try:
+                id_tipo = int(entrada)
+            except ValueError:
+                mostrar_error("Ingresa un ID numérico válido o escribe 'nuevo'.")
+                continue
+
+            if not self.catalogos.existe_tipo(id_tipo):
+                mostrar_error("Ese ID de tipo de obra no existe.")
+                continue
+            return id_tipo
+
+    def _crear_categoria_rapida(self):
+        print("\n--- Nueva Categoría / Género (escribe 'atras' para volver a la lista) ---")
+        codigo = None
+        genero = None
+        paso = 0
+
+        while paso < 2:
+            try:
+                if paso == 0:
+                    val = pedir_texto(
+                        "Código de categoría (ej. FIC, INF, HIS; máx. 5)", max_len=5
+                    ).upper()
+                    if self.catalogos.existe_categoria(val):
+                        mostrar_error(f"Ya existe una categoría con el código '{val}'.")
+                        continue
+                    codigo = val
+                    paso = 1
+                elif paso == 1:
+                    val = pedir_texto("Género / descripción (máx. 30)", max_len=30)
+                    if self.catalogos.existe_categoria_genero(val):
+                        mostrar_error(f"Ya existe una categoría registrada con el género '{val}'.")
+                        continue
+                    genero = val
+                    paso = 2
+            except PasoAnterior:
+                if paso == 0:
+                    mostrar_aviso("Regresando a la selección de categorías...")
+                    return None
+                paso -= 1
+                mostrar_aviso("Regresando al campo anterior...")
+
+        try:
+            self.catalogos.crear_categoria(Categoria(codigo, genero))
+            mostrar_exito(f"Categoría '{genero}' ({codigo}) guardada en la base de datos.")
+            return codigo
+        except (ValueError, Error) as e:
+            mostrar_error(f"Error al guardar categoría: {e}")
+            return None
+
+    def _seleccionar_o_crear_categoria(self):
+        while True:
+            categorias = self.catalogos.listar_categorias()
+            if not categorias:
+                mostrar_aviso("No hay categorías registradas. Registra una nueva:")
+                cod = self._crear_categoria_rapida()
+                if cod is not None:
+                    return cod
+                raise PasoAnterior()
+
+            self._mostrar_categorias(categorias)
+            entrada = pedir_texto(
+                "Código de categoría (escribe 'nuevo' para registrar una, o 'atras' para volver)",
+                max_len=20,
+            )
+            if entrada.lower() in ("nuevo", "nueva"):
+                cod = self._crear_categoria_rapida()
+                if cod is not None:
+                    return cod
+                continue
+
+            cod = entrada.upper()
+            if not self.catalogos.existe_categoria(cod):
+                mostrar_error("Ese código de categoría no existe. Elige uno de la tabla o escribe 'nuevo'.")
+                continue
+            return cod
+
+    def _crear_autor_rapido(self):
+        print("\n--- Nuevo Autor (escribe 'atras' para volver al paso anterior) ---")
+        nombre = None
+        ap1 = None
+        ap2 = None
+        paso = 0
+
+        while paso < 3:
+            try:
+                if paso == 0:
+                    nombre = pedir_texto("Nombre de pila del autor", max_len=50)
+                    paso = 1
+                elif paso == 1:
+                    ap1 = pedir_texto("Primer apellido del autor", max_len=50)
+                    paso = 2
+                elif paso == 2:
+                    ap2 = pedir_texto("Segundo apellido del autor", max_len=50, obligatorio=False)
+                    if self.catalogos.existe_autor_nombre(nombre, ap1, ap2):
+                        mostrar_error("Ya existe un autor registrado con ese mismo nombre completo.")
+                        paso = 0
+                        continue
+                    paso = 3
+            except PasoAnterior:
+                if paso == 0:
+                    mostrar_aviso("Regresando a la selección de autores...")
+                    return None
+                paso -= 1
+                mostrar_aviso("Regresando al campo anterior...")
+
+        try:
+            autor = Autor(nombre, ap1, ap2)
+            nuevo_id = self.catalogos.crear_autor(autor)
+            mostrar_exito(f"Autor '{autor.nombre_completo}' guardado con ID #{nuevo_id}.")
+            return nuevo_id
+        except (ValueError, Error) as e:
+            mostrar_error(f"Error al guardar autor: {e}")
+            return None
+
+    def _seleccionar_o_crear_autor(self):
+        while True:
+            autores = self.catalogos.listar_autores()
+            if not autores:
+                mostrar_aviso("No hay autores registrados. Registra un autor nuevo:")
+                nuevo_id = self._crear_autor_rapido()
+                if nuevo_id is not None:
+                    return nuevo_id
+                raise PasoAnterior()
+
+            self._mostrar_autores(autores)
+            entrada = pedir_texto(
+                "ID del autor a asociar (escribe 'nuevo' para registrar uno, o 'atras' para volver)",
+                max_len=20,
+            )
+            if entrada.lower() in ("nuevo", "nueva"):
+                nuevo_id = self._crear_autor_rapido()
+                if nuevo_id is not None:
+                    return nuevo_id
+                continue
+
+            try:
+                id_autor = int(entrada)
+            except ValueError:
+                mostrar_error("Ingresa un ID numérico válido o escribe 'nuevo'.")
+                continue
+
+            if not self.catalogos.existe_autor(id_autor):
+                mostrar_error("Ese ID de autor no existe.")
+                continue
+            return id_autor
+
+    def _crear_editorial_rapida(self):
+        print("\n--- Nueva Editorial (escribe 'atras' para volver al paso anterior) ---")
+        nombre = None
+        clave_pais = None
+        paso = 0
+
+        while paso < 2:
+            try:
+                if paso == 0:
+                    nombre = pedir_texto("Nombre de la editorial", max_len=50)
+                    paso = 1
+                elif paso == 1:
+                    clave_pais = self._seleccionar_o_crear_pais()
+                    if self.catalogos.existe_editorial_nombre(nombre, clave_pais):
+                        mostrar_error(
+                            f"Ya existe la editorial '{nombre}' registrada en el país '{clave_pais}'."
+                        )
+                        paso = 0
+                        continue
+                    paso = 2
+            except PasoAnterior:
+                if paso == 0:
+                    mostrar_aviso("Regresando a la selección de editoriales...")
+                    return None
+                paso -= 1
+                mostrar_aviso("Regresando al campo anterior...")
+
+        try:
+            nuevo_id = self.catalogos.crear_editorial(Editorial(nombre, clave_pais))
+            mostrar_exito(f"Editorial '{nombre}' ({clave_pais}) guardada con ID #{nuevo_id}.")
+            return nuevo_id
+        except (ValueError, Error) as e:
+            mostrar_error(f"Error al guardar editorial: {e}")
+            return None
+
+    def _seleccionar_o_crear_editorial(self):
+        while True:
+            editoriales = self.catalogos.listar_editoriales()
+            if not editoriales:
+                mostrar_aviso("No hay editoriales registradas. Registra una editorial nueva:")
+                nuevo_id = self._crear_editorial_rapida()
+                if nuevo_id is not None:
+                    return nuevo_id
+                raise PasoAnterior()
+
+            self._mostrar_editoriales(editoriales)
+            entrada = pedir_texto(
+                "ID de la editorial a asociar (escribe 'nuevo' para registrar una, o 'atras' para volver)",
+                max_len=20,
+            )
+            if entrada.lower() in ("nuevo", "nueva"):
+                nuevo_id = self._crear_editorial_rapida()
+                if nuevo_id is not None:
+                    return nuevo_id
+                continue
+
+            try:
+                id_ed = int(entrada)
+            except ValueError:
+                mostrar_error("Ingresa un ID numérico válido o escribe 'nuevo'.")
+                continue
+
+            if not self.catalogos.existe_editorial(id_ed):
+                mostrar_error("Ese ID de editorial no existe.")
+                continue
+            return id_ed
+
+    def _crear_proveedor_rapido(self):
+        print("\n--- Nuevo Proveedor (escribe 'atras' para volver al paso anterior) ---")
+        rfc = None
+        empresa = None
+        telefonos = []
+        paso = 0
+
+        while paso < 3:
+            try:
+                if paso == 0:
+                    val = pedir_texto("RFC del proveedor (máx. 13)", max_len=13).upper()
+                    if self.catalogos.existe_proveedor(val):
+                        mostrar_error(f"Ya existe un proveedor registrado con el RFC '{val}'.")
+                        continue
+                    rfc = val
+                    paso = 1
+                elif paso == 1:
+                    empresa = pedir_texto("Nombre de la empresa", max_len=50)
+                    paso = 2
+                elif paso == 2:
+                    telefonos = self._capturar_telefonos("este proveedor", telefonos)
+                    paso = 3
+            except PasoAnterior:
+                if paso == 0:
+                    mostrar_aviso("Regresando a la selección de proveedores...")
+                    return None
+                paso -= 1
+                mostrar_aviso("Regresando al campo anterior...")
+
+        try:
+            self.catalogos.crear_proveedor(Proveedor(rfc, empresa, telefonos))
+            mostrar_exito(f"Proveedor '{empresa}' ({rfc}) guardado en la base de datos.")
+            return rfc
+        except (ValueError, Error) as e:
+            mostrar_error(f"Error al guardar proveedor: {e}")
+            return None
+
+    def _seleccionar_o_crear_proveedor(self):
+        while True:
+            proveedores = self.catalogos.listar_proveedores()
+            if not proveedores:
+                mostrar_aviso("No hay proveedores registrados. Registra un proveedor nuevo:")
+                rfc = self._crear_proveedor_rapido()
+                if rfc is not None:
+                    return rfc
+                raise PasoAnterior()
+
+            self._mostrar_proveedores(proveedores)
+            entrada = pedir_texto(
+                "RFC del proveedor (escribe 'nuevo' para registrar uno, o 'atras' para volver)",
+                max_len=20,
+            )
+            if entrada.lower() in ("nuevo", "nueva"):
+                rfc = self._crear_proveedor_rapido()
+                if rfc is not None:
+                    return rfc
+                continue
+
+            rfc = entrada.upper()
+            if not self.catalogos.existe_proveedor(rfc):
+                mostrar_error("Ese RFC de proveedor no existe. Elige uno de la tabla o escribe 'nuevo'.")
+                continue
+            return rfc
+
+    def _crear_localizacion_rapida(self):
+        print("\n--- Nueva Localización (escribe 'atras' para volver al paso anterior) ---")
+        seccion = None
+        pasillo = None
+        estante = None
+        paso = 0
+
+        while paso < 3:
+            try:
+                if paso == 0:
+                    seccion = pedir_texto("Sección (ej. Literatura, Ingeniería)", max_len=50)
+                    paso = 1
+                elif paso == 1:
+                    pasillo = pedir_entero("Número de pasillo", minimo=0)
+                    paso = 2
+                elif paso == 2:
+                    estante = pedir_entero("Número de estante", minimo=0)
+                    if self.catalogos.existe_localizacion_datos(seccion, pasillo, estante):
+                        mostrar_error(
+                            "Ya existe una localización con esa misma sección, pasillo y estante."
+                        )
+                        paso = 0
+                        continue
+                    paso = 3
+            except PasoAnterior:
+                if paso == 0:
+                    mostrar_aviso("Regresando a la selección de localizaciones...")
+                    return None
+                paso -= 1
+                mostrar_aviso("Regresando al campo anterior...")
+
+        try:
+            nuevo_id = self.catalogos.crear_localizacion(Localizacion(estante, seccion, pasillo))
+            mostrar_exito(
+                f"Localización '{seccion}' (Pasillo {pasillo}, Estante {estante}) "
+                f"guardada con ID #{nuevo_id}."
+            )
+            return nuevo_id
+        except (ValueError, Error) as e:
+            mostrar_error(f"Error al guardar localización: {e}")
+            return None
+
+    def _seleccionar_o_crear_localizacion(self, permitir_sin_asignar=False):
+        while True:
+            locs = self.catalogos.listar_localizaciones()
+            if not locs:
+                mostrar_aviso("No hay localizaciones registradas. Registra una nueva:")
+                nuevo_id = self._crear_localizacion_rapida()
+                if nuevo_id is not None:
+                    return nuevo_id
+                raise PasoAnterior()
+
+            self._mostrar_localizaciones(locs)
+            if permitir_sin_asignar:
+                etiqueta = "ID de localización (0 = Sin asignar, 'nuevo' = registrar, 'atras' = volver)"
+            else:
+                etiqueta = "ID de localización (escribe 'nuevo' para registrar una, o 'atras' para volver)"
+
+            entrada = pedir_texto(etiqueta, max_len=20)
+            if entrada.lower() in ("nuevo", "nueva"):
+                nuevo_id = self._crear_localizacion_rapida()
+                if nuevo_id is not None:
+                    return nuevo_id
+                continue
+            if entrada == "0" and permitir_sin_asignar:
+                return None
+
+            try:
+                id_loc = int(entrada)
+            except ValueError:
+                mostrar_error("Ingresa un ID numérico válido o escribe 'nuevo'.")
+                continue
+
+            if not self.catalogos.existe_localizacion(id_loc):
+                mostrar_error("Ese ID de localización no existe.")
+                continue
+            return id_loc
+
+    def _crear_usuario_rapido(self):
+        print("\n--- Nuevo Usuario (escribe 'atras' para volver al paso anterior) ---")
+        nombre = None
+        ap1 = None
+        ap2 = None
+        calle = None
+        numero = None
+        colonia = None
+        telefonos = []
+        paso = 0
+
+        while paso < 7:
+            try:
+                if paso == 0:
+                    nombre = pedir_texto("Nombre de pila", max_len=50)
+                    paso = 1
+                elif paso == 1:
+                    ap1 = pedir_texto("Primer apellido", max_len=50)
+                    paso = 2
+                elif paso == 2:
+                    ap2 = pedir_texto("Segundo apellido", max_len=50, obligatorio=False)
+                    paso = 3
+                elif paso == 3:
+                    calle = pedir_texto("Calle (máx. 30)", max_len=30)
+                    paso = 4
+                elif paso == 4:
+                    numero = pedir_texto("Número exterior/interior (máx. 10)", max_len=10)
+                    paso = 5
+                elif paso == 5:
+                    colonia = pedir_texto("Colonia (máx. 50)", max_len=50)
+                    if self.catalogos.existe_usuario_datos(
+                        nombre, ap1, ap2, calle, numero, colonia
+                    ):
+                        mostrar_error(
+                            "Ya existe un usuario registrado con ese mismo nombre y dirección."
+                        )
+                        paso = 0
+                        continue
+                    paso = 6
+                elif paso == 6:
+                    telefonos = self._capturar_telefonos("este usuario", telefonos)
+                    paso = 7
+            except PasoAnterior:
+                if paso == 0:
+                    mostrar_aviso("Regresando a la selección de usuarios...")
+                    return None
+                paso -= 1
+                mostrar_aviso("Regresando al campo anterior...")
+
+        try:
+            usr = Usuario(
+                nombre_pila=nombre,
+                primer_ap=ap1,
+                segundo_ap=ap2,
+                dir_calle=calle,
+                dir_numero=numero,
+                dir_colonia=colonia,
+                telefonos=telefonos,
+            )
+            nuevo_id = self.catalogos.crear_usuario(usr)
+            mostrar_exito(
+                f"Usuario '{usr.nombre_completo}' guardado en la base de datos con ID #{nuevo_id}."
+            )
+            return nuevo_id
+        except (ValueError, Error) as e:
+            mostrar_error(f"Error al guardar usuario: {e}")
+            return None
+
+    def _seleccionar_o_crear_usuario(self):
+        while True:
+            usuarios = self.catalogos.listar_usuarios()
+            if not usuarios:
+                mostrar_aviso(
+                    "No hay usuarios registrados. Registra un usuario nuevo para el préstamo:"
+                )
+                nuevo_id = self._crear_usuario_rapido()
+                if nuevo_id is not None:
+                    return nuevo_id
+                raise PasoAnterior()
+
+            self._mostrar_usuarios(usuarios)
+            entrada = pedir_texto(
+                "ID del usuario (escribe 'nuevo' para registrar uno, o 'atras' para volver)",
+                max_len=20,
+            )
+            if entrada.lower() in ("nuevo", "nueva"):
+                nuevo_id = self._crear_usuario_rapido()
+                if nuevo_id is not None:
+                    return nuevo_id
+                continue
+
+            try:
+                id_usuario = int(entrada)
+            except ValueError:
+                mostrar_error("Ingresa un ID numérico válido o escribe 'nuevo'.")
+                continue
+
+            if not self.catalogos.existe_usuario(id_usuario):
+                mostrar_error(
+                    "No existe ningún usuario con ese ID. Elige uno de la tabla o escribe 'nuevo'."
+                )
+                continue
+            return id_usuario
+
+    # ==========================================================
     # REGISTRO 1: OBRA COMPLETA / ABASTECIMIENTO
     # ==========================================================
     def flujo_registro_obra(self):
@@ -158,11 +813,13 @@ class AplicacionBiblioteca:
                 "REGISTRO 1: OBRA COMPLETA Y ABASTECIMIENTO",
                 "Registra una obra nueva o agrega más ejemplares a una existente",
             )
-            print("1. Registrar obra nueva (con autores, editorial, proveedor y ejemplares)")
+            print("1. Registrar obra nueva (con tipo, categoría, autores, editorial, proveedor y ejemplares)")
             print("2. Abastecer más ejemplares a una obra ya registrada")
             print("0. Volver\n")
 
-            op = pedir_entero("Opción", minimo=0, maximo=2, permitir_cancelar=False)
+            op = pedir_entero(
+                "Opción", minimo=0, maximo=2, permitir_cancelar=False, permitir_atras=False
+            )
             if op == 0:
                 return
             if op == 1:
@@ -173,137 +830,117 @@ class AplicacionBiblioteca:
     def _registrar_obra_nueva(self):
         while True:
             limpiar_pantalla()
-            mostrar_titulo("REGISTRO 1: ALTA DE OBRA NUEVA")
-
-            tipos = self.catalogos.listar_tipos()
-            categorias = self.catalogos.listar_categorias()
-            autores = self.catalogos.listar_autores()
-            editoriales = self.catalogos.listar_editoriales()
-            proveedores = self.catalogos.listar_proveedores()
-            localizaciones = self.catalogos.listar_localizaciones()
-
-            faltantes = []
-            if not tipos:
-                faltantes.append("Tipos de obra")
-            if not categorias:
-                faltantes.append("Categorías")
-            if not autores:
-                faltantes.append("Autores")
-            if not editoriales:
-                faltantes.append("Editoriales")
-            if not proveedores:
-                faltantes.append("Proveedores")
-            if not localizaciones:
-                faltantes.append("Localizaciones")
-
-            if faltantes:
-                mostrar_aviso(
-                    "Antes de registrar una obra, captura al menos un registro en: "
-                    + ", ".join(faltantes)
-                    + " (en la opción 6 - Catálogos auxiliares)."
-                )
-                pausar()
-                return
-
+            mostrar_titulo(
+                "REGISTRO 1: ALTA DE OBRA NUEVA",
+                "Puedes elegir datos existentes o escribir 'nuevo' para registrarlos al momento",
+            )
             mostrar_ayuda_cancelar()
+
+            isbn = None
+            titulo = None
+            subtitulo = None
+            anio = None
+            paginas = None
+            id_tipo = None
+            cod_categoria = None
+            ids_autores = []
+            ids_editoriales = []
+            rfc_prov = None
+            fecha_adq = None
+            cantidad = None
+            id_loc = None
+            paso = 0
+
             try:
-                while True:
-                    isbn = pedir_texto("ISBN (máx. 17 caracteres)", max_len=17)
-                    if isbn == "0":
-                        raise OperacionCancelada()
-                    if self.obras.existe_obra(isbn):
-                        mostrar_aviso(
-                            "Ese ISBN ya existe. Usa otro ISBN o elige la opción 2 para abastecer."
-                        )
-                        continue
-                    break
-
-                titulo = pedir_texto("Título (máx. 50 caracteres)", max_len=50)
-                subtitulo = pedir_texto(
-                    "Subtítulo (máx. 100 caracteres)", max_len=100, obligatorio=False
-                )
-                anio = pedir_entero("Año de publicación (4 dígitos)", minimo=1000, maximo=2100)
-                paginas = pedir_entero("Número de páginas", minimo=1)
-
-                self._mostrar_tipos(tipos)
-                while True:
-                    id_tipo = pedir_entero("ID del tipo de obra (0 para cancelar)", minimo=0)
-                    if id_tipo == 0:
-                        raise OperacionCancelada()
-                    if not self.catalogos.existe_tipo(id_tipo):
-                        mostrar_error("Ese ID de tipo de obra no existe.")
-                        continue
-                    break
-
-                self._mostrar_categorias(categorias)
-                while True:
-                    cod_categoria = pedir_texto("Código de categoría", max_len=5).upper()
-                    if cod_categoria == "0":
-                        raise OperacionCancelada()
-                    if not self.catalogos.existe_categoria(cod_categoria):
-                        mostrar_error("Ese código de categoría no existe.")
-                        continue
-                    break
-
-                self._mostrar_autores(autores)
-                ids_autores = []
-                while True:
-                    id_autor = pedir_entero("ID del autor a asociar (0 para cancelar)", minimo=0)
-                    if id_autor == 0:
-                        raise OperacionCancelada()
-                    if not self.catalogos.existe_autor(id_autor):
-                        mostrar_error("Ese ID de autor no existe.")
-                        continue
-                    if id_autor in ids_autores:
-                        mostrar_aviso("Ese autor ya fue agregado a esta obra.")
-                    else:
-                        ids_autores.append(id_autor)
-                    if not confirmar("¿Deseas agregar OTRO autor a esta obra?"):
-                        break
-
-                self._mostrar_editoriales(editoriales)
-                ids_editoriales = []
-                while True:
-                    id_ed = pedir_entero("ID de la editorial a asociar (0 para cancelar)", minimo=0)
-                    if id_ed == 0:
-                        raise OperacionCancelada()
-                    if not self.catalogos.existe_editorial(id_ed):
-                        mostrar_error("Ese ID de editorial no existe.")
-                        continue
-                    if id_ed in ids_editoriales:
-                        mostrar_aviso("Esa editorial ya fue agregada a esta obra.")
-                    else:
-                        ids_editoriales.append(id_ed)
-                    if not confirmar("¿Deseas agregar OTRA editorial a esta obra?"):
-                        break
-
-                self._mostrar_proveedores(proveedores)
-                while True:
-                    rfc_prov = pedir_texto("RFC del proveedor", max_len=13).upper()
-                    if rfc_prov == "0":
-                        raise OperacionCancelada()
-                    if not self.catalogos.existe_proveedor(rfc_prov):
-                        mostrar_error("Ese RFC de proveedor no existe.")
-                        continue
-                    break
-
-                fecha_adq = pedir_fecha("Fecha de adquisición")
-                cantidad = pedir_entero("Cantidad de ejemplares recibidos", minimo=1)
-
-                id_loc = None
-                if confirmar(
-                    "¿Deseas asignar una localización específica desde ahora? (No = Sin asignar)"
-                ):
-                    self._mostrar_localizaciones(localizaciones)
-                    while True:
-                        id_loc = pedir_entero("ID de localización (0 para usar Sin asignar)", minimo=0)
-                        if id_loc == 0:
-                            id_loc = None
-                            break
-                        if not self.catalogos.existe_localizacion(id_loc):
-                            mostrar_error("Ese ID de localización no existe.")
-                            continue
-                        break
+                while paso < 13:
+                    try:
+                        if paso == 0:
+                            val = pedir_texto("ISBN (máx. 17 caracteres)", max_len=17)
+                            if self.obras.existe_obra(val):
+                                mostrar_aviso(
+                                    "Ese ISBN ya existe. Usa otro ISBN o elige la opción 2 para abastecer."
+                                )
+                                continue
+                            isbn = val
+                            paso = 1
+                        elif paso == 1:
+                            titulo = pedir_texto("Título (máx. 50 caracteres)", max_len=50)
+                            paso = 2
+                        elif paso == 2:
+                            subtitulo = pedir_texto(
+                                "Subtítulo (máx. 100 caracteres)", max_len=100, obligatorio=False
+                            )
+                            paso = 3
+                        elif paso == 3:
+                            anio = pedir_entero(
+                                "Año de publicación (4 dígitos)", minimo=1000, maximo=2100
+                            )
+                            paso = 4
+                        elif paso == 4:
+                            paginas = pedir_entero("Número de páginas", minimo=1)
+                            paso = 5
+                        elif paso == 5:
+                            id_tipo = self._seleccionar_o_crear_tipo()
+                            paso = 6
+                        elif paso == 6:
+                            cod_categoria = self._seleccionar_o_crear_categoria()
+                            paso = 7
+                        elif paso == 7:
+                            ids_autores = self._capturar_lista_asociada(
+                                "OTRO autor",
+                                "autores",
+                                self._seleccionar_o_crear_autor,
+                                ids_autores,
+                            )
+                            paso = 8
+                        elif paso == 8:
+                            ids_editoriales = self._capturar_lista_asociada(
+                                "OTRA editorial",
+                                "editoriales",
+                                self._seleccionar_o_crear_editorial,
+                                ids_editoriales,
+                            )
+                            paso = 9
+                        elif paso == 9:
+                            rfc_prov = self._seleccionar_o_crear_proveedor()
+                            paso = 10
+                        elif paso == 10:
+                            fecha_adq = pedir_fecha("Fecha de adquisición")
+                            paso = 11
+                        elif paso == 11:
+                            cantidad = pedir_entero("Cantidad de ejemplares recibidos", minimo=1)
+                            paso = 12
+                        elif paso == 12:
+                            if not self.catalogos.listar_localizaciones():
+                                mostrar_aviso(
+                                    "No hay localizaciones en la BD. Registra una para los ejemplares:"
+                                )
+                                id_loc = self._seleccionar_o_crear_localizacion(
+                                    permitir_sin_asignar=False
+                                )
+                                paso = 13
+                            else:
+                                asignar = confirmar(
+                                    "¿Deseas asignar una localización específica desde ahora? (No = Sin asignar)"
+                                )
+                                if asignar:
+                                    try:
+                                        id_loc = self._seleccionar_o_crear_localizacion(
+                                            permitir_sin_asignar=True
+                                        )
+                                        paso = 13
+                                    except PasoAnterior:
+                                        mostrar_aviso("Regresando a la pregunta de localización...")
+                                        continue
+                                else:
+                                    id_loc = None
+                                    paso = 13
+                    except PasoAnterior:
+                        if paso == 0:
+                            mostrar_aviso("Regresando al menú anterior...")
+                            return
+                        paso -= 1
+                        mostrar_aviso("Regresando al paso anterior...")
 
                 obra = Obra(
                     isbn=isbn,
@@ -324,7 +961,7 @@ class AplicacionBiblioteca:
                     f"Obra '{obra.titulo}' registrada con éxito. "
                     f"Se generaron los ejemplares #{inicio} al #{fin}."
                 )
-                if not confirmar("¿Deseas registrar OTRA obra nueva?"):
+                if not self._confirmar_continuar("¿Deseas registrar OTRA obra nueva?"):
                     return
             except OperacionCancelada:
                 mostrar_aviso("Operación cancelada. Regresando al menú...")
@@ -332,7 +969,7 @@ class AplicacionBiblioteca:
                 return
             except (ValueError, Error) as e:
                 mostrar_error(f"No se pudo registrar la obra: {e}")
-                if not confirmar("¿Deseas intentar registrar otra obra?"):
+                if not self._confirmar_continuar("¿Deseas intentar registrar otra obra?"):
                     return
 
     def _abastecer_existente(self):
@@ -341,50 +978,67 @@ class AplicacionBiblioteca:
             mostrar_titulo("REGISTRO 1: ABASTECER OBRA EXISTENTE")
 
             obras = self.obras.listar_obras()
-            proveedores = self.catalogos.listar_proveedores()
-            if not obras or not proveedores:
-                mostrar_aviso("Necesitas al menos una obra y un proveedor registrados.")
+            if not obras:
+                mostrar_aviso("No hay obras registradas todavía. Usa la opción 1 para dar de alta una.")
                 pausar()
                 return
 
             mostrar_ayuda_cancelar()
+            isbn = None
+            rfc_prov = None
+            fecha_adq = None
+            cantidad = None
+            id_loc = None
+            paso = 0
+
             try:
-                self._mostrar_obras(obras)
-                while True:
-                    isbn = pedir_texto("ISBN de la obra a abastecer", max_len=17)
-                    if isbn == "0":
-                        raise OperacionCancelada()
-                    if not self.obras.existe_obra(isbn):
-                        mostrar_error("No se encontró ninguna obra con ese ISBN.")
-                        continue
-                    break
-
-                self._mostrar_proveedores(proveedores)
-                while True:
-                    rfc_prov = pedir_texto("RFC del proveedor", max_len=13).upper()
-                    if rfc_prov == "0":
-                        raise OperacionCancelada()
-                    if not self.catalogos.existe_proveedor(rfc_prov):
-                        mostrar_error("Ese RFC de proveedor no existe.")
-                        continue
-                    break
-
-                fecha_adq = pedir_fecha("Fecha de adquisición")
-                cantidad = pedir_entero("Cantidad de nuevos ejemplares", minimo=1)
-
-                id_loc = None
-                if confirmar("¿Asignar una localización específica a estos ejemplares?"):
-                    locs = self.catalogos.listar_localizaciones()
-                    self._mostrar_localizaciones(locs)
-                    while True:
-                        id_loc = pedir_entero("ID de localización (0 para Sin asignar)", minimo=0)
-                        if id_loc == 0:
-                            id_loc = None
-                            break
-                        if not self.catalogos.existe_localizacion(id_loc):
-                            mostrar_error("Ese ID de localización no existe.")
-                            continue
-                        break
+                while paso < 5:
+                    try:
+                        if paso == 0:
+                            self._mostrar_obras(obras)
+                            val = pedir_texto("ISBN de la obra a abastecer", max_len=17)
+                            if not self.obras.existe_obra(val):
+                                mostrar_error("No se encontró ninguna obra con ese ISBN.")
+                                continue
+                            isbn = val
+                            paso = 1
+                        elif paso == 1:
+                            rfc_prov = self._seleccionar_o_crear_proveedor()
+                            paso = 2
+                        elif paso == 2:
+                            fecha_adq = pedir_fecha("Fecha de adquisición")
+                            paso = 3
+                        elif paso == 3:
+                            cantidad = pedir_entero("Cantidad de nuevos ejemplares", minimo=1)
+                            paso = 4
+                        elif paso == 4:
+                            if not self.catalogos.listar_localizaciones():
+                                id_loc = self._seleccionar_o_crear_localizacion(
+                                    permitir_sin_asignar=False
+                                )
+                                paso = 5
+                            else:
+                                asignar = confirmar(
+                                    "¿Asignar una localización específica a estos ejemplares?"
+                                )
+                                if asignar:
+                                    try:
+                                        id_loc = self._seleccionar_o_crear_localizacion(
+                                            permitir_sin_asignar=True
+                                        )
+                                        paso = 5
+                                    except PasoAnterior:
+                                        mostrar_aviso("Regresando a la pregunta de localización...")
+                                        continue
+                                else:
+                                    id_loc = None
+                                    paso = 5
+                    except PasoAnterior:
+                        if paso == 0:
+                            mostrar_aviso("Regresando al menú anterior...")
+                            return
+                        paso -= 1
+                        mostrar_aviso("Regresando al paso anterior...")
 
                 inicio, fin = self.obras.abastecer_obra_existente(
                     isbn, rfc_prov, fecha_adq, cantidad, id_localizacion=id_loc
@@ -392,7 +1046,7 @@ class AplicacionBiblioteca:
                 mostrar_exito(
                     f"Abastecimiento guardado. Nuevos ejemplares generados: #{inicio} al #{fin}."
                 )
-                if not confirmar("¿Deseas registrar OTRO abastecimiento?"):
+                if not self._confirmar_continuar("¿Deseas registrar OTRO abastecimiento?"):
                     return
             except OperacionCancelada:
                 mostrar_aviso("Operación cancelada. Regresando al menú...")
@@ -400,7 +1054,7 @@ class AplicacionBiblioteca:
                 return
             except (ValueError, Error) as e:
                 mostrar_error(f"No se pudo registrar el abastecimiento: {e}")
-                if not confirmar("¿Deseas intentar otro abastecimiento?"):
+                if not self._confirmar_continuar("¿Deseas intentar otro abastecimiento?"):
                     return
 
     # ==========================================================
@@ -412,79 +1066,87 @@ class AplicacionBiblioteca:
             mostrar_titulo("REGISTRO 2: ASIGNAR LOCALIZACIÓN A EJEMPLARES")
 
             obras = self.obras.listar_obras()
-            locs = self.catalogos.listar_localizaciones()
             if not obras:
                 mostrar_aviso("No hay obras registradas.")
                 pausar()
                 return
-            if not locs:
-                mostrar_aviso("No hay localizaciones registradas.")
-                pausar()
-                return
 
             mostrar_ayuda_cancelar()
+            isbn = None
+            ejemplares = []
+            id_loc = None
+            aplicar_todos = False
+            num_ej = None
+            paso = 0
+
             try:
-                self._mostrar_obras(obras)
-                while True:
-                    isbn = pedir_texto("ISBN de la obra", max_len=17)
-                    if isbn == "0":
-                        raise OperacionCancelada()
-                    ejemplares = self.obras.listar_ejemplares_obra(isbn)
-                    if not ejemplares:
-                        mostrar_error("Esa obra no existe o no tiene ejemplares registrados.")
-                        continue
-                    break
+                while paso < 4:
+                    try:
+                        if paso == 0:
+                            self._mostrar_obras(obras)
+                            val = pedir_texto("ISBN de la obra", max_len=17)
+                            ejs = self.obras.listar_ejemplares_obra(val)
+                            if not ejs:
+                                mostrar_error("Esa obra no existe o no tiene ejemplares registrados.")
+                                continue
+                            isbn = val
+                            ejemplares = ejs
+                            filas = [
+                                (
+                                    e["ejemplar"],
+                                    e["localizacion"],
+                                    e["seccion"],
+                                    e["pasillo"],
+                                    e["estante"],
+                                    e["estado"],
+                                )
+                                for e in ejemplares
+                            ]
+                            mostrar_tabla(
+                                f"Ejemplares de {isbn}",
+                                ["Ejemplar #", "ID Loc.", "Sección", "Pasillo", "Estante", "Estado"],
+                                filas,
+                            )
+                            paso = 1
+                        elif paso == 1:
+                            id_loc = self._seleccionar_o_crear_localizacion(
+                                permitir_sin_asignar=False
+                            )
+                            paso = 2
+                        elif paso == 2:
+                            aplicar_todos = confirmar(
+                                "¿Aplicar esta localización a TODOS los ejemplares de esta obra?"
+                            )
+                            paso = 4 if aplicar_todos else 3
+                        elif paso == 3:
+                            numeros_validos = [e["ejemplar"] for e in ejemplares]
+                            val_ej = pedir_entero("Número de ejemplar específico", minimo=1)
+                            if val_ej not in numeros_validos:
+                                mostrar_error(
+                                    f"Ese ejemplar no existe. Disponibles en esta obra: {numeros_validos}"
+                                )
+                                continue
+                            num_ej = val_ej
+                            paso = 4
+                    except PasoAnterior:
+                        if paso == 0:
+                            mostrar_aviso("Regresando al menú anterior...")
+                            return
+                        paso -= 1
+                        mostrar_aviso("Regresando al paso anterior...")
 
-                filas = [
-                    (
-                        e["ejemplar"],
-                        e["localizacion"],
-                        e["seccion"],
-                        e["pasillo"],
-                        e["estante"],
-                        e["estado"],
-                    )
-                    for e in ejemplares
-                ]
-                mostrar_tabla(
-                    f"Ejemplares de {isbn}",
-                    ["Ejemplar #", "ID Loc.", "Sección", "Pasillo", "Estante", "Estado"],
-                    filas,
-                )
-
-                self._mostrar_localizaciones(locs)
-                while True:
-                    id_loc = pedir_entero("Nuevo ID de localización (0 para cancelar)", minimo=0)
-                    if id_loc == 0:
-                        raise OperacionCancelada()
-                    if not self.catalogos.existe_localizacion(id_loc):
-                        mostrar_error("Ese ID de localización no existe.")
-                        continue
-                    break
-
-                if confirmar("¿Aplicar esta localización a TODOS los ejemplares de esta obra?"):
+                if aplicar_todos:
                     afectados = self.obras.asignar_localizacion_todos(isbn, id_loc)
                     mostrar_exito(
                         f"Se actualizaron {afectados} ejemplares a la localización #{id_loc}."
                     )
                 else:
-                    numeros_validos = [e["ejemplar"] for e in ejemplares]
-                    while True:
-                        num_ej = pedir_entero(
-                            "Número de ejemplar específico (0 para cancelar)", minimo=0
-                        )
-                        if num_ej == 0:
-                            raise OperacionCancelada()
-                        if num_ej not in numeros_validos:
-                            mostrar_error(
-                                f"Ese ejemplar no existe. Disponibles en esta obra: {numeros_validos}"
-                            )
-                            continue
-                        break
                     self.obras.asignar_localizacion_ejemplar(isbn, num_ej, id_loc)
                     mostrar_exito(f"Ejemplar #{num_ej} actualizado a la localización #{id_loc}.")
 
-                if not confirmar("¿Deseas asignar localización a OTRA obra o ejemplar?"):
+                if not self._confirmar_continuar(
+                    "¿Deseas asignar localización a OTRA obra o ejemplar?"
+                ):
                     return
             except OperacionCancelada:
                 mostrar_aviso("Operación cancelada. Regresando al menú...")
@@ -492,7 +1154,7 @@ class AplicacionBiblioteca:
                 return
             except Error as e:
                 mostrar_error(f"Error al actualizar localización: {e}")
-                if not confirmar("¿Deseas intentar otra asignación?"):
+                if not self._confirmar_continuar("¿Deseas intentar otra asignación?"):
                     return
 
     # ==========================================================
@@ -503,107 +1165,46 @@ class AplicacionBiblioteca:
             limpiar_pantalla()
             mostrar_titulo(
                 "REGISTRO 3: PRÉSTAMO DE EJEMPLARES",
-                "Plazo automático de devolución: 2 semanas (14 días)",
+                "Plazo automático: 14 días | Escribe 'nuevo' en usuario para registrarlo al momento",
             )
 
-            usuarios = self.catalogos.listar_usuarios()
             resumen_disp = self.prestamos.listar_resumen_disponibles()
-            if not usuarios:
-                mostrar_aviso("Registra primero al menos un usuario en Catálogos auxiliares.")
-                pausar()
-                return
             if not resumen_disp:
                 mostrar_aviso("No hay ejemplares disponibles para préstamo.")
                 pausar()
                 return
 
             mostrar_ayuda_cancelar()
+            id_usuario = None
+            fecha_salida = None
+            fecha_limite = None
+            seleccionados = []
+            paso = 0
+
             try:
-                self._mostrar_usuarios(usuarios)
-                while True:
-                    id_usuario = pedir_entero("ID del usuario (0 para cancelar)", minimo=0)
-                    if id_usuario == 0:
-                        raise OperacionCancelada()
-                    if not self.catalogos.existe_usuario(id_usuario):
-                        mostrar_error("No existe ningún usuario con ese ID. Intenta de nuevo.")
-                        continue
-                    break
-
-                fecha_salida = pedir_fecha("Fecha de salida del préstamo")
-                fecha_limite = fecha_salida + timedelta(days=Prestamo.DIAS_PLAZO)
-                print(f"Fecha límite calculada automáticamente (+14 días): {fecha_limite}")
-
-                self._mostrar_resumen_disponibles(resumen_disp)
-
-                seleccionados = []
-                while True:
-                    if seleccionados:
-                        etiqueta_isbn = (
-                            "ISBN de otra obra (0 para guardar préstamo, 'cancelar' para anular)"
-                        )
-                    else:
-                        etiqueta_isbn = "ISBN de la obra a prestar ('cancelar' para regresar)"
-
-                    isbn = pedir_texto(etiqueta_isbn, max_len=17)
-                    if isbn == "0":
-                        break
-
-                    if not self.obras.existe_obra(isbn):
-                        mostrar_error("Ese ISBN no existe en el catálogo. Intenta con otro.")
-                        continue
-
-                    copias_bd = self.prestamos.obtener_ejemplares_disponibles_por_isbn(isbn)
-                    copias_libres = [
-                        c for c in copias_bd if (isbn, c["ejemplar"]) not in seleccionados
-                    ]
-
-                    if not copias_libres:
-                        mostrar_aviso(
-                            "Esta obra ya no tiene ejemplares disponibles (están prestados o ya los agregaste)."
-                        )
-                        continue
-
-                    numeros_libres = [c["ejemplar"] for c in copias_libres]
-                    titulo_obra = copias_libres[0]["titulo"]
-                    lista_txt = ", ".join(f"#{n}" for n in numeros_libres)
-                    print(f"\nObra: {titulo_obra}")
-                    print(f"Ejemplares disponibles para prestar: {lista_txt}")
-
-                    while True:
-                        num_ej = pedir_entero(
-                            "Número de ejemplar a prestar (0 para elegir otro ISBN)",
-                            minimo=0,
-                        )
-                        if num_ej == 0:
-                            break
-                        if num_ej not in numeros_libres:
-                            mostrar_error(
-                                f"El ejemplar #{num_ej} no existe o no está disponible. "
-                                f"Opciones válidas: {lista_txt}"
+                while paso < 3:
+                    try:
+                        if paso == 0:
+                            id_usuario = self._seleccionar_o_crear_usuario()
+                            paso = 1
+                        elif paso == 1:
+                            fecha_salida = pedir_fecha("Fecha de salida del préstamo")
+                            fecha_limite = fecha_salida + timedelta(days=Prestamo.DIAS_PLAZO)
+                            print(
+                                f"Fecha límite calculada automáticamente (+14 días): "
+                                f"{formatear_fecha(fecha_limite)}"
                             )
-                            if confirmar("¿Deseas elegir otro ISBN?"):
-                                break
-                            continue
-
-                        seleccionados.append((isbn, num_ej))
-                        mostrar_exito(
-                            f"Agregado al préstamo: {titulo_obra} ({isbn}) - Ejemplar #{num_ej}"
-                        )
-                        break
-
-                    if seleccionados:
-                        if not confirmar("¿Deseas agregar OTRO ejemplar a este mismo préstamo?"):
-                            break
-                    else:
-                        if not confirmar(
-                            "Aún no agregas ejemplares. ¿Deseas intentar con otro ISBN?"
-                        ):
-                            break
-
-                if not seleccionados:
-                    mostrar_aviso("Préstamo cancelado (no se seleccionaron ejemplares).")
-                    pausar()
-                    return
+                            paso = 2
+                        elif paso == 2:
+                            self._mostrar_resumen_disponibles(resumen_disp)
+                            seleccionados = self._capturar_ejemplares_prestamo(seleccionados)
+                            paso = 3
+                    except PasoAnterior:
+                        if paso == 0:
+                            mostrar_aviso("Regresando al menú anterior...")
+                            return
+                        paso -= 1
+                        mostrar_aviso("Regresando al paso anterior...")
 
                 prestamo = Prestamo(
                     fecha_salida=fecha_salida,
@@ -615,9 +1216,9 @@ class AplicacionBiblioteca:
                 folio = self.prestamos.registrar_prestamo(prestamo)
                 mostrar_exito(
                     f"Préstamo registrado correctamente con Folio #{folio} | "
-                    f"Ejemplares: {len(seleccionados)} | Fecha límite: {fecha_limite}"
+                    f"Ejemplares: {len(seleccionados)} | Fecha límite: {formatear_fecha(fecha_limite)}"
                 )
-                if not confirmar("¿Deseas registrar OTRO préstamo?"):
+                if not self._confirmar_continuar("¿Deseas registrar OTRO préstamo?"):
                     return
             except OperacionCancelada:
                 mostrar_aviso("Préstamo cancelado. Regresando al menú...")
@@ -625,8 +1226,79 @@ class AplicacionBiblioteca:
                 return
             except (ValueError, Error) as e:
                 mostrar_error(f"No se pudo registrar el préstamo: {e}")
-                if not confirmar("¿Deseas intentar registrar otro préstamo?"):
+                if not self._confirmar_continuar("¿Deseas intentar registrar otro préstamo?"):
                     return
+
+    def _capturar_ejemplares_prestamo(self, seleccionados_actuales=None):
+        """Selecciona 1 o más ejemplares (ISBN -> número) con retroceso paso a paso."""
+        seleccionados = list(seleccionados_actuales) if seleccionados_actuales else []
+
+        while True:
+            if not seleccionados:
+                isbn = pedir_texto("ISBN de la obra a prestar", max_len=17)
+                agregado = self._elegir_ejemplar_de_isbn(isbn, seleccionados)
+                if not agregado:
+                    continue
+            try:
+                agregar_otro = confirmar("¿Deseas agregar OTRO ejemplar a este mismo préstamo?")
+            except PasoAnterior:
+                quitado = seleccionados.pop()
+                mostrar_aviso(
+                    f"Regresando al paso anterior (se quitó {quitado[0]} - Ejemplar #{quitado[1]})."
+                )
+                continue
+
+            if not agregar_otro:
+                return seleccionados
+
+            try:
+                isbn = pedir_texto("ISBN de la siguiente obra a prestar", max_len=17)
+            except PasoAnterior:
+                mostrar_aviso("Regresando a la confirmación de ejemplares...")
+                continue
+
+            self._elegir_ejemplar_de_isbn(isbn, seleccionados)
+
+    def _elegir_ejemplar_de_isbn(self, isbn, seleccionados):
+        """Valida un ISBN y permite elegir uno de sus ejemplares disponibles."""
+        if not self.obras.existe_obra(isbn):
+            mostrar_error("Ese ISBN no existe en el catálogo. Intenta con otro.")
+            return False
+
+        copias_bd = self.prestamos.obtener_ejemplares_disponibles_por_isbn(isbn)
+        copias_libres = [c for c in copias_bd if (isbn, c["ejemplar"]) not in seleccionados]
+        if not copias_libres:
+            mostrar_aviso(
+                "Esta obra ya no tiene ejemplares disponibles (están prestados o ya los agregaste)."
+            )
+            return False
+
+        numeros_libres = [c["ejemplar"] for c in copias_libres]
+        titulo_obra = copias_libres[0]["titulo"]
+        lista_txt = ", ".join(f"#{n}" for n in numeros_libres)
+        print(f"\nObra: {titulo_obra}")
+        print(f"Ejemplares disponibles para prestar: {lista_txt}")
+
+        while True:
+            try:
+                num_ej = pedir_entero(
+                    "Número de ejemplar a prestar (escribe 'atras' para elegir otro ISBN)",
+                    minimo=1,
+                )
+            except PasoAnterior:
+                mostrar_aviso("Regresando a la selección de ISBN...")
+                return False
+
+            if num_ej not in numeros_libres:
+                mostrar_error(
+                    f"El ejemplar #{num_ej} no existe o no está disponible. "
+                    f"Opciones válidas: {lista_txt}"
+                )
+                continue
+
+            seleccionados.append((isbn, num_ej))
+            mostrar_exito(f"Agregado al préstamo: {titulo_obra} ({isbn}) - Ejemplar #{num_ej}")
+            return True
 
     # ==========================================================
     # REGISTRO 4: DEVOLUCIÓN DE EJEMPLARES (CON MULTA AUTOMÁTICA)
@@ -646,69 +1318,87 @@ class AplicacionBiblioteca:
                 return
 
             mostrar_ayuda_cancelar()
+            folio = None
+            pendientes = []
+            isbn = None
+            ejemplares_isbn = []
+            num_ej = None
+            fecha_dev = None
+            paso = 0
+
             try:
-                self._mostrar_prestamos_activos_resumen(activos)
-
-                while True:
-                    folio = pedir_entero("Folio del préstamo a devolver (0 para cancelar)", minimo=0)
-                    if folio == 0:
-                        raise OperacionCancelada()
-                    pendientes = self.prestamos.listar_ejemplares_pendientes_prestamo(folio)
-                    if not pendientes:
-                        mostrar_error("Ese folio no existe o ya no tiene ejemplares pendientes.")
-                        continue
-                    break
-
-                filas = [
-                    (p["obra"], p["titulo"], p["ejemplar"], p["fecha_salida"], p["fecha_limite"])
-                    for p in pendientes
-                ]
-                mostrar_tabla(
-                    f"Ejemplares pendientes del Préstamo #{folio}",
-                    ["ISBN", "Título", "Ejemplar #", "Fecha Salida", "Fecha Límite"],
-                    filas,
-                )
-
-                isbns_pendientes = list(dict.fromkeys(p["obra"] for p in pendientes))
-                while True:
-                    isbn = pedir_texto("ISBN del ejemplar devuelto", max_len=17)
-                    if isbn == "0":
-                        raise OperacionCancelada()
-                    if isbn not in isbns_pendientes:
-                        mostrar_error(
-                            "Ese ISBN no corresponde a ningún ejemplar pendiente de este préstamo."
-                        )
-                        continue
-                    break
-
-                ejemplares_isbn = [p for p in pendientes if p["obra"] == isbn]
-                nums_validos = [p["ejemplar"] for p in ejemplares_isbn]
-                print(
-                    f"Ejemplares pendientes de '{ejemplares_isbn[0]['titulo']}': "
-                    + ", ".join(f"#{n}" for n in nums_validos)
-                )
-
-                while True:
-                    num_ej = pedir_entero("Número de ejemplar devuelto (0 para cancelar)", minimo=0)
-                    if num_ej == 0:
-                        raise OperacionCancelada()
-                    if num_ej not in nums_validos:
-                        mostrar_error(
-                            f"El ejemplar #{num_ej} no está pendiente en este préstamo. "
-                            f"Opciones válidas: {nums_validos}"
-                        )
-                        continue
-                    break
-
-                fecha_salida = ejemplares_isbn[0]["fecha_salida"]
-                while True:
-                    fecha_dev = pedir_fecha("Fecha real de devolución")
-                    if fecha_dev < fecha_salida:
-                        mostrar_error(
-                            f"La fecha de devolución no puede ser anterior a la fecha de salida ({fecha_salida})."
-                        )
-                        continue
-                    break
+                while paso < 4:
+                    try:
+                        if paso == 0:
+                            self._mostrar_prestamos_activos_resumen(activos)
+                            val_folio = pedir_entero("Folio del préstamo a devolver", minimo=1)
+                            pends = self.prestamos.listar_ejemplares_pendientes_prestamo(val_folio)
+                            if not pends:
+                                mostrar_error(
+                                    "Ese folio no existe o ya no tiene ejemplares pendientes."
+                                )
+                                continue
+                            folio = val_folio
+                            pendientes = pends
+                            filas = [
+                                (
+                                    p["obra"],
+                                    p["titulo"],
+                                    p["ejemplar"],
+                                    p["fecha_salida"],
+                                    p["fecha_limite"],
+                                )
+                                for p in pendientes
+                            ]
+                            mostrar_tabla(
+                                f"Ejemplares pendientes del Préstamo #{folio}",
+                                ["ISBN", "Título", "Ejemplar #", "Fecha Salida", "Fecha Límite"],
+                                filas,
+                            )
+                            paso = 1
+                        elif paso == 1:
+                            isbns_pendientes = list(dict.fromkeys(p["obra"] for p in pendientes))
+                            val_isbn = pedir_texto("ISBN del ejemplar devuelto", max_len=17)
+                            if val_isbn not in isbns_pendientes:
+                                mostrar_error(
+                                    "Ese ISBN no corresponde a ningún ejemplar pendiente de este préstamo."
+                                )
+                                continue
+                            isbn = val_isbn
+                            ejemplares_isbn = [p for p in pendientes if p["obra"] == isbn]
+                            paso = 2
+                        elif paso == 2:
+                            nums_validos = [p["ejemplar"] for p in ejemplares_isbn]
+                            print(
+                                f"Ejemplares pendientes de '{ejemplares_isbn[0]['titulo']}': "
+                                + ", ".join(f"#{n}" for n in nums_validos)
+                            )
+                            val_ej = pedir_entero("Número de ejemplar devuelto", minimo=1)
+                            if val_ej not in nums_validos:
+                                mostrar_error(
+                                    f"El ejemplar #{val_ej} no está pendiente en este préstamo. "
+                                    f"Opciones válidas: {nums_validos}"
+                                )
+                                continue
+                            num_ej = val_ej
+                            paso = 3
+                        elif paso == 3:
+                            fecha_salida = ejemplares_isbn[0]["fecha_salida"]
+                            val_fecha = pedir_fecha("Fecha real de devolución")
+                            if val_fecha < fecha_salida:
+                                mostrar_error(
+                                    f"La fecha de devolución no puede ser anterior a la fecha de salida "
+                                    f"({formatear_fecha(fecha_salida)})."
+                                )
+                                continue
+                            fecha_dev = val_fecha
+                            paso = 4
+                    except PasoAnterior:
+                        if paso == 0:
+                            mostrar_aviso("Regresando al menú anterior...")
+                            return
+                        paso -= 1
+                        mostrar_aviso("Regresando al paso anterior...")
 
                 resultado = self.prestamos.registrar_devolucion(
                     folio, isbn, num_ej, fecha_dev, self.empleado_activo.id_empleado
@@ -717,7 +1407,7 @@ class AplicacionBiblioteca:
                 if resultado["con_retraso"]:
                     mostrar_aviso(
                         f"Entrega con RETRASO de {resultado['dias_retraso']} día(s) "
-                        f"(fecha límite: {resultado['fecha_limite']})."
+                        f"(fecha límite: {formatear_fecha(resultado['fecha_limite'])})."
                     )
                     mostrar_aviso(
                         f"Multa #{resultado['id_multa']} generada automáticamente: "
@@ -731,7 +1421,7 @@ class AplicacionBiblioteca:
                     mostrar_aviso("Ya no quedan más préstamos activos pendientes.")
                     pausar()
                     return
-                if not confirmar("¿Deseas registrar OTRA devolución?"):
+                if not self._confirmar_continuar("¿Deseas registrar OTRA devolución?"):
                     return
             except OperacionCancelada:
                 mostrar_aviso("Operación cancelada. Regresando al menú...")
@@ -739,7 +1429,7 @@ class AplicacionBiblioteca:
                 return
             except (ValueError, Error) as e:
                 mostrar_error(f"No se pudo registrar la devolución: {e}")
-                if not confirmar("¿Deseas intentar otra devolución?"):
+                if not self._confirmar_continuar("¿Deseas intentar otra devolución?"):
                     return
 
     # ==========================================================
@@ -757,7 +1447,9 @@ class AplicacionBiblioteca:
             print("3. Ver historial completo de multas")
             print("0. Volver\n")
 
-            op = pedir_entero("Opción", minimo=0, maximo=3, permitir_cancelar=False)
+            op = pedir_entero(
+                "Opción", minimo=0, maximo=3, permitir_cancelar=False, permitir_atras=False
+            )
 
             if op == 0:
                 break
@@ -807,9 +1499,7 @@ class AplicacionBiblioteca:
             mostrar_ayuda_cancelar()
             try:
                 while True:
-                    id_multa = pedir_entero("ID de la multa a pagar (0 para cancelar)", minimo=0)
-                    if id_multa == 0:
-                        raise OperacionCancelada()
+                    id_multa = pedir_entero("ID de la multa a pagar", minimo=1)
                     multa_bd = self.multas.obtener_multa(id_multa)
                     if not multa_bd:
                         mostrar_error("No existe ninguna multa con ese ID.")
@@ -829,15 +1519,16 @@ class AplicacionBiblioteca:
                     mostrar_aviso("Ya no quedan multas pendientes de pago.")
                     pausar()
                     return
-                if not confirmar("¿Deseas marcar OTRA multa pendiente como 'Pagada'?"):
+                if not self._confirmar_continuar(
+                    "¿Deseas marcar OTRA multa pendiente como 'Pagada'?"
+                ):
                     return
-            except OperacionCancelada:
-                mostrar_aviso("Operación cancelada. Regresando al menú...")
-                pausar()
+            except (OperacionCancelada, PasoAnterior):
+                mostrar_aviso("Regresando al menú de multas...")
                 return
             except Error as e:
                 mostrar_error(f"Error al actualizar la multa: {e}")
-                if not confirmar("¿Deseas intentar con otra multa?"):
+                if not self._confirmar_continuar("¿Deseas intentar con otra multa?"):
                     return
 
     # ==========================================================
@@ -859,7 +1550,11 @@ class AplicacionBiblioteca:
             print("0. Volver al menú principal\n")
 
             op = pedir_entero(
-                "Selecciona un catálogo", minimo=0, maximo=9, permitir_cancelar=False
+                "Selecciona un catálogo",
+                minimo=0,
+                maximo=9,
+                permitir_cancelar=False,
+                permitir_atras=False,
             )
 
             if op == 0:
@@ -896,31 +1591,47 @@ class AplicacionBiblioteca:
                     primera_vez = False
 
                 mostrar_ayuda_cancelar()
-                while True:
-                    clave = pedir_texto(
-                        "Clave de país (ej. MEX, ESP, USA; máx. 5)", max_len=5
-                    ).upper()
-                    if self.catalogos.existe_pais(clave):
-                        mostrar_error(f"Ya existe un país registrado con la clave '{clave}'.")
-                        continue
-                    break
-                while True:
-                    nombre = pedir_texto("Nombre del país", max_len=50)
-                    if self.catalogos.existe_pais_nombre(nombre):
-                        mostrar_error(f"Ya existe un país registrado con el nombre '{nombre}'.")
-                        continue
-                    break
+                clave = None
+                nombre = None
+                paso = 0
+
+                while paso < 2:
+                    try:
+                        if paso == 0:
+                            val = pedir_texto(
+                                "Clave de país (ej. MEX, ESP, USA; máx. 5)", max_len=5
+                            ).upper()
+                            if self.catalogos.existe_pais(val):
+                                mostrar_error(f"Ya existe un país registrado con la clave '{val}'.")
+                                continue
+                            clave = val
+                            paso = 1
+                        elif paso == 1:
+                            val = pedir_texto("Nombre del país", max_len=50)
+                            if self.catalogos.existe_pais_nombre(val):
+                                mostrar_error(
+                                    f"Ya existe un país registrado con el nombre '{val}'."
+                                )
+                                continue
+                            nombre = val
+                            paso = 2
+                    except PasoAnterior:
+                        if paso == 0:
+                            mostrar_aviso("Regresando al menú de catálogos...")
+                            return
+                        paso -= 1
+                        mostrar_aviso("Regresando al campo anterior...")
+
                 self.catalogos.crear_pais(Pais(clave, nombre))
                 mostrar_exito("País registrado correctamente.")
-                if not confirmar("¿Deseas registrar OTRO país?"):
+                if not self._confirmar_continuar("¿Deseas registrar OTRO país?"):
                     return
-            except OperacionCancelada:
-                mostrar_aviso("Operación cancelada. Regresando al menú...")
-                pausar()
+            except (OperacionCancelada, PasoAnterior):
+                mostrar_aviso("Regresando al menú de catálogos...")
                 return
             except (ValueError, Error) as e:
                 mostrar_error(f"Error: {e}")
-                if not confirmar("¿Deseas intentar registrar otro país?"):
+                if not self._confirmar_continuar("¿Deseas intentar registrar otro país?"):
                     return
 
     def _catalogo_tipos(self):
@@ -944,15 +1655,14 @@ class AplicacionBiblioteca:
                     break
                 nuevo_id = self.catalogos.crear_tipo(TipoObra(nombre))
                 mostrar_exito(f"Tipo de obra registrado con ID #{nuevo_id}.")
-                if not confirmar("¿Deseas registrar OTRO tipo de obra?"):
+                if not self._confirmar_continuar("¿Deseas registrar OTRO tipo de obra?"):
                     return
-            except OperacionCancelada:
-                mostrar_aviso("Operación cancelada. Regresando al menú...")
-                pausar()
+            except (OperacionCancelada, PasoAnterior):
+                mostrar_aviso("Regresando al menú de catálogos...")
                 return
             except (ValueError, Error) as e:
                 mostrar_error(f"Error: {e}")
-                if not confirmar("¿Deseas intentar registrar otro tipo de obra?"):
+                if not self._confirmar_continuar("¿Deseas intentar registrar otro tipo de obra?"):
                     return
 
     def _catalogo_categorias(self):
@@ -968,33 +1678,47 @@ class AplicacionBiblioteca:
                     primera_vez = False
 
                 mostrar_ayuda_cancelar()
-                while True:
-                    codigo = pedir_texto(
-                        "Código de categoría (ej. FIC, INF, HIS; máx. 5)", max_len=5
-                    ).upper()
-                    if self.catalogos.existe_categoria(codigo):
-                        mostrar_error(f"Ya existe una categoría con el código '{codigo}'.")
-                        continue
-                    break
-                while True:
-                    genero = pedir_texto("Género / descripción (máx. 30)", max_len=30)
-                    if self.catalogos.existe_categoria_genero(genero):
-                        mostrar_error(
-                            f"Ya existe una categoría registrada con el género '{genero}'."
-                        )
-                        continue
-                    break
+                codigo = None
+                genero = None
+                paso = 0
+
+                while paso < 2:
+                    try:
+                        if paso == 0:
+                            val = pedir_texto(
+                                "Código de categoría (ej. FIC, INF, HIS; máx. 5)", max_len=5
+                            ).upper()
+                            if self.catalogos.existe_categoria(val):
+                                mostrar_error(f"Ya existe una categoría con el código '{val}'.")
+                                continue
+                            codigo = val
+                            paso = 1
+                        elif paso == 1:
+                            val = pedir_texto("Género / descripción (máx. 30)", max_len=30)
+                            if self.catalogos.existe_categoria_genero(val):
+                                mostrar_error(
+                                    f"Ya existe una categoría registrada con el género '{val}'."
+                                )
+                                continue
+                            genero = val
+                            paso = 2
+                    except PasoAnterior:
+                        if paso == 0:
+                            mostrar_aviso("Regresando al menú de catálogos...")
+                            return
+                        paso -= 1
+                        mostrar_aviso("Regresando al campo anterior...")
+
                 self.catalogos.crear_categoria(Categoria(codigo, genero))
                 mostrar_exito("Categoría registrada correctamente.")
-                if not confirmar("¿Deseas registrar OTRA categoría?"):
+                if not self._confirmar_continuar("¿Deseas registrar OTRA categoría?"):
                     return
-            except OperacionCancelada:
-                mostrar_aviso("Operación cancelada. Regresando al menú...")
-                pausar()
+            except (OperacionCancelada, PasoAnterior):
+                mostrar_aviso("Regresando al menú de catálogos...")
                 return
             except (ValueError, Error) as e:
                 mostrar_error(f"Error: {e}")
-                if not confirmar("¿Deseas intentar registrar otra categoría?"):
+                if not self._confirmar_continuar("¿Deseas intentar registrar otra categoría?"):
                     return
 
     def _catalogo_autores(self):
@@ -1010,24 +1734,45 @@ class AplicacionBiblioteca:
                     primera_vez = False
 
                 mostrar_ayuda_cancelar()
-                nombre = pedir_texto("Nombre de pila", max_len=50)
-                ap1 = pedir_texto("Primer apellido", max_len=50)
-                ap2 = pedir_texto("Segundo apellido", max_len=50, obligatorio=False)
-                if self.catalogos.existe_autor_nombre(nombre, ap1, ap2):
-                    mostrar_error("Ya existe un autor registrado con ese mismo nombre completo.")
-                else:
-                    nuevo_id = self.catalogos.crear_autor(Autor(nombre, ap1, ap2))
-                    mostrar_exito(f"Autor registrado con ID #{nuevo_id}.")
+                nombre = None
+                ap1 = None
+                ap2 = None
+                paso = 0
 
-                if not confirmar("¿Deseas registrar OTRO autor?"):
+                while paso < 3:
+                    try:
+                        if paso == 0:
+                            nombre = pedir_texto("Nombre de pila", max_len=50)
+                            paso = 1
+                        elif paso == 1:
+                            ap1 = pedir_texto("Primer apellido", max_len=50)
+                            paso = 2
+                        elif paso == 2:
+                            ap2 = pedir_texto("Segundo apellido", max_len=50, obligatorio=False)
+                            if self.catalogos.existe_autor_nombre(nombre, ap1, ap2):
+                                mostrar_error(
+                                    "Ya existe un autor registrado con ese mismo nombre completo."
+                                )
+                                paso = 0
+                                continue
+                            paso = 3
+                    except PasoAnterior:
+                        if paso == 0:
+                            mostrar_aviso("Regresando al menú de catálogos...")
+                            return
+                        paso -= 1
+                        mostrar_aviso("Regresando al campo anterior...")
+
+                nuevo_id = self.catalogos.crear_autor(Autor(nombre, ap1, ap2))
+                mostrar_exito(f"Autor registrado con ID #{nuevo_id}.")
+                if not self._confirmar_continuar("¿Deseas registrar OTRO autor?"):
                     return
-            except OperacionCancelada:
-                mostrar_aviso("Operación cancelada. Regresando al menú...")
-                pausar()
+            except (OperacionCancelada, PasoAnterior):
+                mostrar_aviso("Regresando al menú de catálogos...")
                 return
             except (ValueError, Error) as e:
                 mostrar_error(f"Error: {e}")
-                if not confirmar("¿Deseas intentar registrar otro autor?"):
+                if not self._confirmar_continuar("¿Deseas intentar registrar otro autor?"):
                     return
 
     def _catalogo_editoriales(self):
@@ -1042,41 +1787,42 @@ class AplicacionBiblioteca:
                         return
                     primera_vez = False
 
-                paises = self.catalogos.listar_paises()
-                if not paises:
-                    mostrar_aviso("Primero registra al menos un país.")
-                    pausar()
-                    return
-
-                self._mostrar_paises(paises)
                 mostrar_ayuda_cancelar()
-                nombre = pedir_texto("Nombre de la editorial", max_len=50)
-                while True:
-                    clave_pais = pedir_texto("Clave del país", max_len=5).upper()
-                    if clave_pais == "0":
-                        raise OperacionCancelada()
-                    if not self.catalogos.existe_pais(clave_pais):
-                        mostrar_error("Esa clave de país no existe.")
-                        continue
-                    break
+                nombre = None
+                clave_pais = None
+                paso = 0
 
-                if self.catalogos.existe_editorial_nombre(nombre, clave_pais):
-                    mostrar_error(
-                        f"Ya existe la editorial '{nombre}' registrada en el país '{clave_pais}'."
-                    )
-                else:
-                    nuevo_id = self.catalogos.crear_editorial(Editorial(nombre, clave_pais))
-                    mostrar_exito(f"Editorial registrada con ID #{nuevo_id}.")
+                while paso < 2:
+                    try:
+                        if paso == 0:
+                            nombre = pedir_texto("Nombre de la editorial", max_len=50)
+                            paso = 1
+                        elif paso == 1:
+                            clave_pais = self._seleccionar_o_crear_pais()
+                            if self.catalogos.existe_editorial_nombre(nombre, clave_pais):
+                                mostrar_error(
+                                    f"Ya existe la editorial '{nombre}' registrada en el país '{clave_pais}'."
+                                )
+                                paso = 0
+                                continue
+                            paso = 2
+                    except PasoAnterior:
+                        if paso == 0:
+                            mostrar_aviso("Regresando al menú de catálogos...")
+                            return
+                        paso -= 1
+                        mostrar_aviso("Regresando al campo anterior...")
 
-                if not confirmar("¿Deseas registrar OTRA editorial?"):
+                nuevo_id = self.catalogos.crear_editorial(Editorial(nombre, clave_pais))
+                mostrar_exito(f"Editorial registrada con ID #{nuevo_id}.")
+                if not self._confirmar_continuar("¿Deseas registrar OTRA editorial?"):
                     return
-            except OperacionCancelada:
-                mostrar_aviso("Operación cancelada. Regresando al menú...")
-                pausar()
+            except (OperacionCancelada, PasoAnterior):
+                mostrar_aviso("Regresando al menú de catálogos...")
                 return
             except (ValueError, Error) as e:
                 mostrar_error(f"Error: {e}")
-                if not confirmar("¿Deseas intentar registrar otra editorial?"):
+                if not self._confirmar_continuar("¿Deseas intentar registrar otra editorial?"):
                     return
 
     def _catalogo_proveedores(self):
@@ -1087,7 +1833,9 @@ class AplicacionBiblioteca:
             print("1. Registrar nuevo proveedor")
             print("2. Agregar teléfono a proveedor existente")
             print("0. Volver\n")
-            op = pedir_entero("Opción", minimo=0, maximo=2, permitir_cancelar=False)
+            op = pedir_entero(
+                "Opción", minimo=0, maximo=2, permitir_cancelar=False, permitir_atras=False
+            )
             if op == 0:
                 return
             if op == 1:
@@ -1101,24 +1849,40 @@ class AplicacionBiblioteca:
             mostrar_titulo("REGISTRO DE PROVEEDORES")
             self._mostrar_proveedores(self.catalogos.listar_proveedores())
             mostrar_ayuda_cancelar()
+
+            rfc = None
+            empresa = None
+            telefonos = []
+            paso = 0
+
             try:
-                while True:
-                    rfc = pedir_texto("RFC del proveedor (máx. 13)", max_len=13).upper()
-                    if self.catalogos.existe_proveedor(rfc):
-                        mostrar_error(f"Ya existe un proveedor registrado con el RFC '{rfc}'.")
-                        continue
-                    break
-                empresa = pedir_texto("Nombre de la empresa", max_len=50)
-                telefonos = [pedir_texto("Teléfono principal (obligatorio, máx. 20)", max_len=20)]
-                while confirmar("¿Deseas agregar OTRO teléfono para este proveedor?"):
-                    tel = pedir_texto("Teléfono adicional (máx. 20)", max_len=20)
-                    if tel in telefonos:
-                        mostrar_aviso("Ese teléfono ya fue agregado a la lista.")
-                    else:
-                        telefonos.append(tel)
+                while paso < 3:
+                    try:
+                        if paso == 0:
+                            val = pedir_texto("RFC del proveedor (máx. 13)", max_len=13).upper()
+                            if self.catalogos.existe_proveedor(val):
+                                mostrar_error(
+                                    f"Ya existe un proveedor registrado con el RFC '{val}'."
+                                )
+                                continue
+                            rfc = val
+                            paso = 1
+                        elif paso == 1:
+                            empresa = pedir_texto("Nombre de la empresa", max_len=50)
+                            paso = 2
+                        elif paso == 2:
+                            telefonos = self._capturar_telefonos("este proveedor", telefonos)
+                            paso = 3
+                    except PasoAnterior:
+                        if paso == 0:
+                            mostrar_aviso("Regresando al menú de proveedores...")
+                            return
+                        paso -= 1
+                        mostrar_aviso("Regresando al campo anterior...")
+
                 self.catalogos.crear_proveedor(Proveedor(rfc, empresa, telefonos))
                 mostrar_exito("Proveedor registrado correctamente.")
-                if not confirmar("¿Deseas registrar OTRO proveedor?"):
+                if not self._confirmar_continuar("¿Deseas registrar OTRO proveedor?"):
                     return
             except OperacionCancelada:
                 mostrar_aviso("Operación cancelada. Regresando al menú...")
@@ -1126,7 +1890,7 @@ class AplicacionBiblioteca:
                 return
             except (ValueError, Error) as e:
                 mostrar_error(f"Error: {e}")
-                if not confirmar("¿Deseas intentar registrar otro proveedor?"):
+                if not self._confirmar_continuar("¿Deseas intentar registrar otro proveedor?"):
                     return
 
     def _agregar_telefono_proveedor_continuo(self):
@@ -1140,24 +1904,42 @@ class AplicacionBiblioteca:
                 return
             self._mostrar_proveedores(proveedores)
             mostrar_ayuda_cancelar()
+
+            rfc = None
+            tel = None
+            paso = 0
+
             try:
-                while True:
-                    rfc = pedir_texto("RFC del proveedor", max_len=13).upper()
-                    if rfc == "0":
-                        raise OperacionCancelada()
-                    if not self.catalogos.existe_proveedor(rfc):
-                        mostrar_error("No existe ningún proveedor con ese RFC.")
-                        continue
-                    break
-                while True:
-                    tel = pedir_texto("Nuevo teléfono (máx. 20)", max_len=20)
-                    if self.catalogos.existe_telefono_proveedor(rfc, tel):
-                        mostrar_error("Ese teléfono ya está registrado para este proveedor.")
-                        continue
-                    break
+                while paso < 2:
+                    try:
+                        if paso == 0:
+                            val = pedir_texto("RFC del proveedor", max_len=13).upper()
+                            if not self.catalogos.existe_proveedor(val):
+                                mostrar_error("No existe ningún proveedor con ese RFC.")
+                                continue
+                            rfc = val
+                            paso = 1
+                        elif paso == 1:
+                            val_tel = pedir_texto("Nuevo teléfono (máx. 20)", max_len=20)
+                            if self.catalogos.existe_telefono_proveedor(rfc, val_tel):
+                                mostrar_error(
+                                    "Ese teléfono ya está registrado para este proveedor."
+                                )
+                                continue
+                            tel = val_tel
+                            paso = 2
+                    except PasoAnterior:
+                        if paso == 0:
+                            mostrar_aviso("Regresando al menú de proveedores...")
+                            return
+                        paso -= 1
+                        mostrar_aviso("Regresando al campo anterior...")
+
                 self.catalogos.agregar_telefono_proveedor(rfc, tel)
                 mostrar_exito("Teléfono agregado al proveedor.")
-                if not confirmar("¿Deseas agregar OTRO teléfono a un proveedor?"):
+                if not self._confirmar_continuar(
+                    "¿Deseas agregar OTRO teléfono a un proveedor?"
+                ):
                     return
             except OperacionCancelada:
                 mostrar_aviso("Operación cancelada. Regresando al menú...")
@@ -1165,7 +1947,7 @@ class AplicacionBiblioteca:
                 return
             except (ValueError, Error) as e:
                 mostrar_error(f"Error: {e}")
-                if not confirmar("¿Deseas intentar de nuevo?"):
+                if not self._confirmar_continuar("¿Deseas intentar de nuevo?"):
                     return
 
     def _catalogo_localizaciones(self):
@@ -1181,28 +1963,47 @@ class AplicacionBiblioteca:
                     primera_vez = False
 
                 mostrar_ayuda_cancelar()
-                seccion = pedir_texto("Sección (ej. Literatura, Ingeniería)", max_len=50)
-                pasillo = pedir_entero("Número de pasillo", minimo=0)
-                estante = pedir_entero("Número de estante", minimo=0)
-                if self.catalogos.existe_localizacion_datos(seccion, pasillo, estante):
-                    mostrar_error(
-                        "Ya existe una localización registrada con esa misma sección, pasillo y estante."
-                    )
-                else:
-                    nuevo_id = self.catalogos.crear_localizacion(
-                        Localizacion(estante, seccion, pasillo)
-                    )
-                    mostrar_exito(f"Localización registrada con ID #{nuevo_id}.")
+                seccion = None
+                pasillo = None
+                estante = None
+                paso = 0
 
-                if not confirmar("¿Deseas registrar OTRA localización?"):
+                while paso < 3:
+                    try:
+                        if paso == 0:
+                            seccion = pedir_texto("Sección (ej. Literatura, Ingeniería)", max_len=50)
+                            paso = 1
+                        elif paso == 1:
+                            pasillo = pedir_entero("Número de pasillo", minimo=0)
+                            paso = 2
+                        elif paso == 2:
+                            estante = pedir_entero("Número de estante", minimo=0)
+                            if self.catalogos.existe_localizacion_datos(seccion, pasillo, estante):
+                                mostrar_error(
+                                    "Ya existe una localización con esa misma sección, pasillo y estante."
+                                )
+                                paso = 0
+                                continue
+                            paso = 3
+                    except PasoAnterior:
+                        if paso == 0:
+                            mostrar_aviso("Regresando al menú de catálogos...")
+                            return
+                        paso -= 1
+                        mostrar_aviso("Regresando al campo anterior...")
+
+                nuevo_id = self.catalogos.crear_localizacion(
+                    Localizacion(estante, seccion, pasillo)
+                )
+                mostrar_exito(f"Localización registrada con ID #{nuevo_id}.")
+                if not self._confirmar_continuar("¿Deseas registrar OTRA localización?"):
                     return
-            except OperacionCancelada:
-                mostrar_aviso("Operación cancelada. Regresando al menú...")
-                pausar()
+            except (OperacionCancelada, PasoAnterior):
+                mostrar_aviso("Regresando al menú de catálogos...")
                 return
             except (ValueError, Error) as e:
                 mostrar_error(f"Error: {e}")
-                if not confirmar("¿Deseas intentar registrar otra localización?"):
+                if not self._confirmar_continuar("¿Deseas intentar registrar otra localización?"):
                     return
 
     def _catalogo_usuarios(self):
@@ -1213,7 +2014,9 @@ class AplicacionBiblioteca:
             print("1. Registrar nuevo usuario")
             print("2. Agregar teléfono a usuario existente")
             print("0. Volver\n")
-            op = pedir_entero("Opción", minimo=0, maximo=2, permitir_cancelar=False)
+            op = pedir_entero(
+                "Opción", minimo=0, maximo=2, permitir_cancelar=False, permitir_atras=False
+            )
             if op == 0:
                 return
             if op == 1:
@@ -1227,39 +2030,67 @@ class AplicacionBiblioteca:
             mostrar_titulo("REGISTRO DE USUARIOS")
             self._mostrar_usuarios(self.catalogos.listar_usuarios())
             mostrar_ayuda_cancelar()
+
+            nombre = None
+            ap1 = None
+            ap2 = None
+            calle = None
+            numero = None
+            colonia = None
+            telefonos = []
+            paso = 0
+
             try:
-                nombre = pedir_texto("Nombre de pila", max_len=50)
-                ap1 = pedir_texto("Primer apellido", max_len=50)
-                ap2 = pedir_texto("Segundo apellido", max_len=50, obligatorio=False)
-                calle = pedir_texto("Calle (máx. 30)", max_len=30)
-                numero = pedir_texto("Número exterior/interior (máx. 10)", max_len=10)
-                colonia = pedir_texto("Colonia (máx. 50)", max_len=50)
-                if self.catalogos.existe_usuario_datos(nombre, ap1, ap2, calle, numero, colonia):
-                    mostrar_error("Ya existe un usuario registrado con ese mismo nombre y dirección.")
-                else:
-                    telefonos = [
-                        pedir_texto("Teléfono principal (obligatorio, máx. 20)", max_len=20)
-                    ]
-                    while confirmar("¿Deseas agregar OTRO teléfono para este usuario?"):
-                        tel = pedir_texto("Teléfono adicional (máx. 20)", max_len=20)
-                        if tel in telefonos:
-                            mostrar_aviso("Ese teléfono ya fue agregado a la lista.")
-                        else:
-                            telefonos.append(tel)
+                while paso < 7:
+                    try:
+                        if paso == 0:
+                            nombre = pedir_texto("Nombre de pila", max_len=50)
+                            paso = 1
+                        elif paso == 1:
+                            ap1 = pedir_texto("Primer apellido", max_len=50)
+                            paso = 2
+                        elif paso == 2:
+                            ap2 = pedir_texto("Segundo apellido", max_len=50, obligatorio=False)
+                            paso = 3
+                        elif paso == 3:
+                            calle = pedir_texto("Calle (máx. 30)", max_len=30)
+                            paso = 4
+                        elif paso == 4:
+                            numero = pedir_texto("Número exterior/interior (máx. 10)", max_len=10)
+                            paso = 5
+                        elif paso == 5:
+                            colonia = pedir_texto("Colonia (máx. 50)", max_len=50)
+                            if self.catalogos.existe_usuario_datos(
+                                nombre, ap1, ap2, calle, numero, colonia
+                            ):
+                                mostrar_error(
+                                    "Ya existe un usuario registrado con ese mismo nombre y dirección."
+                                )
+                                paso = 0
+                                continue
+                            paso = 6
+                        elif paso == 6:
+                            telefonos = self._capturar_telefonos("este usuario", telefonos)
+                            paso = 7
+                    except PasoAnterior:
+                        if paso == 0:
+                            mostrar_aviso("Regresando al menú de usuarios...")
+                            return
+                        paso -= 1
+                        mostrar_aviso("Regresando al campo anterior...")
 
-                    usr = Usuario(
-                        nombre_pila=nombre,
-                        primer_ap=ap1,
-                        segundo_ap=ap2,
-                        dir_calle=calle,
-                        dir_numero=numero,
-                        dir_colonia=colonia,
-                        telefonos=telefonos,
-                    )
-                    nuevo_id = self.catalogos.crear_usuario(usr)
-                    mostrar_exito(f"Usuario registrado con ID #{nuevo_id}.")
-
-                if not confirmar("¿Deseas registrar OTRO usuario?"):
+                usr = Usuario(
+                    nombre_pila=nombre,
+                    primer_ap=ap1,
+                    segundo_ap=ap2,
+                    dir_calle=calle,
+                    dir_numero=numero,
+                    dir_colonia=colonia,
+                    telefonos=telefonos,
+                )
+                nuevo_id = self.catalogos.crear_usuario(usr)
+                mostrar_exito(f"Usuario registrado con ID #{nuevo_id}.")
+                if not self._confirmar_continuar("¿Deseas registrar OTRO usuario?"):
                     return
             except OperacionCancelada:
                 mostrar_aviso("Operación cancelada. Regresando al menú...")
@@ -1267,7 +2098,7 @@ class AplicacionBiblioteca:
                 return
             except (ValueError, Error) as e:
                 mostrar_error(f"Error: {e}")
-                if not confirmar("¿Deseas intentar registrar otro usuario?"):
+                if not self._confirmar_continuar("¿Deseas intentar registrar otro usuario?"):
                     return
 
     def _agregar_telefono_usuario_continuo(self):
@@ -1281,24 +2112,38 @@ class AplicacionBiblioteca:
                 return
             self._mostrar_usuarios(usuarios)
             mostrar_ayuda_cancelar()
+
+            id_usr = None
+            tel = None
+            paso = 0
+
             try:
-                while True:
-                    id_usr = pedir_entero("ID del usuario (0 para cancelar)", minimo=0)
-                    if id_usr == 0:
-                        raise OperacionCancelada()
-                    if not self.catalogos.existe_usuario(id_usr):
-                        mostrar_error("No existe ningún usuario con ese ID.")
-                        continue
-                    break
-                while True:
-                    tel = pedir_texto("Nuevo teléfono (máx. 20)", max_len=20)
-                    if self.catalogos.existe_telefono_usuario(id_usr, tel):
-                        mostrar_error("Ese teléfono ya está registrado para este usuario.")
-                        continue
-                    break
+                while paso < 2:
+                    try:
+                        if paso == 0:
+                            val_id = pedir_entero("ID del usuario", minimo=1)
+                            if not self.catalogos.existe_usuario(val_id):
+                                mostrar_error("No existe ningún usuario con ese ID.")
+                                continue
+                            id_usr = val_id
+                            paso = 1
+                        elif paso == 1:
+                            val_tel = pedir_texto("Nuevo teléfono (máx. 20)", max_len=20)
+                            if self.catalogos.existe_telefono_usuario(id_usr, val_tel):
+                                mostrar_error("Ese teléfono ya está registrado para este usuario.")
+                                continue
+                            tel = val_tel
+                            paso = 2
+                    except PasoAnterior:
+                        if paso == 0:
+                            mostrar_aviso("Regresando al menú de usuarios...")
+                            return
+                        paso -= 1
+                        mostrar_aviso("Regresando al campo anterior...")
+
                 self.catalogos.agregar_telefono_usuario(id_usr, tel)
                 mostrar_exito("Teléfono agregado al usuario.")
-                if not confirmar("¿Deseas agregar OTRO teléfono a un usuario?"):
+                if not self._confirmar_continuar("¿Deseas agregar OTRO teléfono a un usuario?"):
                     return
             except OperacionCancelada:
                 mostrar_aviso("Operación cancelada. Regresando al menú...")
@@ -1306,7 +2151,7 @@ class AplicacionBiblioteca:
                 return
             except (ValueError, Error) as e:
                 mostrar_error(f"Error: {e}")
-                if not confirmar("¿Deseas intentar de nuevo?"):
+                if not self._confirmar_continuar("¿Deseas intentar de nuevo?"):
                     return
 
     def _catalogo_empleados(self):
@@ -1331,31 +2176,55 @@ class AplicacionBiblioteca:
                     primera_vez = False
 
                 mostrar_ayuda_cancelar()
-                nombre = pedir_texto("Nombre de pila", max_len=50)
-                ap1 = pedir_texto("Primer apellido", max_len=50)
-                ap2 = pedir_texto("Segundo apellido", max_len=50, obligatorio=False)
-                while True:
-                    user = pedir_texto("Nombre de usuario (único, máx. 30)", max_len=30)
-                    if self.catalogos.existe_empleado_user(user):
-                        mostrar_error(
-                            f"El nombre de usuario '{user}' ya está en uso. Elige otro."
-                        )
-                        continue
-                    break
-                pwd = pedir_texto("Contraseña (máx. 50)", max_len=50)
+                nombre = None
+                ap1 = None
+                ap2 = None
+                user = None
+                pwd = None
+                paso = 0
+
+                while paso < 5:
+                    try:
+                        if paso == 0:
+                            nombre = pedir_texto("Nombre de pila", max_len=50)
+                            paso = 1
+                        elif paso == 1:
+                            ap1 = pedir_texto("Primer apellido", max_len=50)
+                            paso = 2
+                        elif paso == 2:
+                            ap2 = pedir_texto("Segundo apellido", max_len=50, obligatorio=False)
+                            paso = 3
+                        elif paso == 3:
+                            val_user = pedir_texto("Nombre de usuario (único, máx. 30)", max_len=30)
+                            if self.catalogos.existe_empleado_user(val_user):
+                                mostrar_error(
+                                    f"El nombre de usuario '{val_user}' ya está en uso. Elige otro."
+                                )
+                                continue
+                            user = val_user
+                            paso = 4
+                        elif paso == 4:
+                            pwd = pedir_texto("Contraseña (máx. 50)", max_len=50)
+                            paso = 5
+                    except PasoAnterior:
+                        if paso == 0:
+                            mostrar_aviso("Regresando al menú de catálogos...")
+                            return
+                        paso -= 1
+                        mostrar_aviso("Regresando al campo anterior...")
+
                 nuevo_id = self.catalogos.crear_empleado(
                     Empleado(nombre, ap1, user, pwd, segundo_ap=ap2)
                 )
                 mostrar_exito(f"Empleado registrado con ID #{nuevo_id}.")
-                if not confirmar("¿Deseas registrar OTRO empleado?"):
+                if not self._confirmar_continuar("¿Deseas registrar OTRO empleado?"):
                     return
-            except OperacionCancelada:
-                mostrar_aviso("Operación cancelada. Regresando al menú...")
-                pausar()
+            except (OperacionCancelada, PasoAnterior):
+                mostrar_aviso("Regresando al menú de catálogos...")
                 return
             except (ValueError, Error) as e:
                 mostrar_error(f"Error: {e}")
-                if not confirmar("¿Deseas intentar registrar otro empleado?"):
+                if not self._confirmar_continuar("¿Deseas intentar registrar otro empleado?"):
                     return
 
     # ==========================================================
@@ -1371,7 +2240,9 @@ class AplicacionBiblioteca:
             print("4. Multas registradas")
             print("0. Volver\n")
 
-            op = pedir_entero("Opción", minimo=0, maximo=4, permitir_cancelar=False)
+            op = pedir_entero(
+                "Opción", minimo=0, maximo=4, permitir_cancelar=False, permitir_atras=False
+            )
             if op == 0:
                 break
             elif op == 1:

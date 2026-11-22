@@ -6,10 +6,16 @@ from decimal import Decimal, InvalidOperation
 
 
 PALABRAS_CANCELAR = ("cancelar", "salir")
+PALABRAS_ATRAS = ("atras", "atrás", "regresar", "volver")
+FORMATO_FECHA = "%d-%m-%Y"
 
 
 class OperacionCancelada(Exception):
-    """Se lanza cuando el usuario escribe 'cancelar' o 'salir' para regresar al menú."""
+    """Se lanza cuando el usuario escribe 'cancelar' o 'salir' para salir al menú."""
+
+
+class PasoAnterior(Exception):
+    """Se lanza cuando el usuario escribe 'atras' o 'regresar' para volver al paso anterior."""
 
 
 def limpiar_pantalla():
@@ -20,6 +26,15 @@ def limpiar_pantalla():
 def pausar(mensaje="Presiona ENTER para continuar..."):
     """Detiene la ejecución hasta que el usuario presione Enter."""
     input(f"\n{mensaje}")
+
+
+def formatear_fecha(valor):
+    """Convierte un objeto date/datetime a texto DD-MM-AAAA."""
+    if valor is None:
+        return "-"
+    if isinstance(valor, date):
+        return valor.strftime(FORMATO_FECHA)
+    return str(valor)
 
 
 def mostrar_titulo(titulo, subtitulo=""):
@@ -34,8 +49,8 @@ def mostrar_titulo(titulo, subtitulo=""):
 
 
 def mostrar_ayuda_cancelar():
-    """Recuerda al usuario cómo cancelar en cualquier paso de un registro."""
-    print("(Escribe 'cancelar' o 'salir' en cualquier campo para regresar)\n")
+    """Recuerda al usuario cómo volver un paso atrás o cancelar todo el registro."""
+    print("(Escribe 'atras' o 'regresar' para el paso anterior | 'cancelar' o 'salir' para salir al menú)\n")
 
 
 def mostrar_exito(mensaje):
@@ -51,7 +66,7 @@ def mostrar_aviso(mensaje):
 
 
 def mostrar_tabla(titulo, columnas, filas):
-    """Dibuja una tabla alineada en texto plano sin dependencias externas."""
+    """Dibuja una tabla alineada en texto plano formateando fechas como DD-MM-AAAA."""
     print(f"\n--- {titulo} ---")
     if not filas:
         print("(Sin registros para mostrar)\n")
@@ -59,7 +74,15 @@ def mostrar_tabla(titulo, columnas, filas):
 
     filas_texto = []
     for fila in filas:
-        filas_texto.append(["-" if valor is None else str(valor) for valor in fila])
+        fila_formateada = []
+        for valor in fila:
+            if valor is None:
+                fila_formateada.append("-")
+            elif isinstance(valor, date):
+                fila_formateada.append(valor.strftime(FORMATO_FECHA))
+            else:
+                fila_formateada.append(str(valor))
+        filas_texto.append(fila_formateada)
 
     anchos = []
     for i, col in enumerate(columnas):
@@ -83,23 +106,31 @@ def mostrar_tabla(titulo, columnas, filas):
     print()
 
 
+def _verificar_navegacion(texto, permitir_cancelar, permitir_atras):
+    """Detecta comandos de navegación ('cancelar'/'salir' y 'atras'/'regresar')."""
+    comando = texto.strip().lower()
+    if permitir_cancelar and comando in PALABRAS_CANCELAR:
+        raise OperacionCancelada()
+    if permitir_atras and comando in PALABRAS_ATRAS:
+        raise PasoAnterior()
+
+
 def pedir_texto(
     etiqueta,
     max_len=None,
     obligatorio=True,
     valor_defecto=None,
     permitir_cancelar=True,
+    permitir_atras=True,
 ):
-    """Solicita una cadena validando si es obligatoria, su longitud máxima y cancelación."""
+    """Solicita una cadena validando si es obligatoria, longitud máxima y navegación."""
     while True:
         sufijo = f" [{valor_defecto}]" if valor_defecto is not None else ""
         if not obligatorio and valor_defecto is None:
             sufijo = " (opcional, Enter para omitir)"
 
         valor = input(f"{etiqueta}{sufijo}: ").strip()
-
-        if permitir_cancelar and valor.lower() in PALABRAS_CANCELAR:
-            raise OperacionCancelada()
+        _verificar_navegacion(valor, permitir_cancelar, permitir_atras)
 
         if not valor:
             if valor_defecto is not None:
@@ -117,13 +148,17 @@ def pedir_texto(
         return valor
 
 
-def pedir_entero(etiqueta, minimo=None, maximo=None, permitir_cancelar=True):
+def pedir_entero(
+    etiqueta,
+    minimo=None,
+    maximo=None,
+    permitir_cancelar=True,
+    permitir_atras=True,
+):
     """Solicita un número entero dentro de un rango opcional."""
     while True:
         texto = input(f"{etiqueta}: ").strip()
-
-        if permitir_cancelar and texto.lower() in PALABRAS_CANCELAR:
-            raise OperacionCancelada()
+        _verificar_navegacion(texto, permitir_cancelar, permitir_atras)
 
         try:
             numero = int(texto)
@@ -141,13 +176,16 @@ def pedir_entero(etiqueta, minimo=None, maximo=None, permitir_cancelar=True):
         return numero
 
 
-def pedir_decimal(etiqueta, minimo=Decimal("0.00"), permitir_cancelar=True):
+def pedir_decimal(
+    etiqueta,
+    minimo=Decimal("0.00"),
+    permitir_cancelar=True,
+    permitir_atras=True,
+):
     """Solicita un monto decimal exacto."""
     while True:
         texto = input(f"{etiqueta}: ").strip()
-
-        if permitir_cancelar and texto.lower() in PALABRAS_CANCELAR:
-            raise OperacionCancelada()
+        _verificar_navegacion(texto, permitir_cancelar, permitir_atras)
 
         try:
             monto = Decimal(texto)
@@ -162,32 +200,34 @@ def pedir_decimal(etiqueta, minimo=Decimal("0.00"), permitir_cancelar=True):
         return monto.quantize(Decimal("0.01"))
 
 
-def pedir_fecha(etiqueta, permitir_hoy=True, permitir_cancelar=True):
-    """Solicita y valida inmediatamente una fecha en formato AAAA-MM-DD."""
+def pedir_fecha(
+    etiqueta,
+    permitir_hoy=True,
+    permitir_cancelar=True,
+    permitir_atras=True,
+):
+    """Solicita y valida inmediatamente una fecha en formato DD-MM-AAAA."""
     hoy = date.today()
     while True:
-        ayuda = f" (AAAA-MM-DD, Enter = {hoy})" if permitir_hoy else " (AAAA-MM-DD)"
+        hoy_txt = hoy.strftime(FORMATO_FECHA)
+        ayuda = f" (DD-MM-AAAA, Enter = {hoy_txt})" if permitir_hoy else " (DD-MM-AAAA)"
         texto = input(f"{etiqueta}{ayuda}: ").strip()
-
-        if permitir_cancelar and texto.lower() in PALABRAS_CANCELAR:
-            raise OperacionCancelada()
+        _verificar_navegacion(texto, permitir_cancelar, permitir_atras)
 
         if not texto and permitir_hoy:
             return hoy
 
         try:
-            return datetime.strptime(texto, "%Y-%m-%d").date()
+            return datetime.strptime(texto, FORMATO_FECHA).date()
         except ValueError:
-            mostrar_error("Formato de fecha inválido. Usa AAAA-MM-DD (ejemplo: 2026-11-21).")
+            mostrar_error("Formato de fecha inválido. Usa DD-MM-AAAA (ejemplo: 22-11-2026).")
 
 
-def confirmar(etiqueta, permitir_cancelar=True):
+def confirmar(etiqueta, permitir_cancelar=True, permitir_atras=True):
     """Pide confirmación Sí/No al usuario."""
     while True:
         resp = input(f"{etiqueta} (s/n): ").strip().lower()
-
-        if permitir_cancelar and resp in PALABRAS_CANCELAR:
-            raise OperacionCancelada()
+        _verificar_navegacion(resp, permitir_cancelar, permitir_atras)
 
         if resp in ("s", "si", "sí"):
             return True
