@@ -1,8 +1,12 @@
-"""Clases gestoras con lógica de negocio y consultas SQL parametrizadas para las 19 tablas."""
+"""Clases gestoras con lógica de negocio y consultas SQL parametrizadas para las 20 tablas."""
 
+from decimal import Decimal
 from mysql.connector import Error
 from conexion import ConexionDB
 from modelos import Empleado
+
+# Tarifa fija diaria por retraso en devolución (pueden ajustarla aquí si lo requieren)
+TARIFA_MULTA_DIA = Decimal("15.00")
 
 
 class GestorBase:
@@ -41,7 +45,7 @@ class GestorAuth(GestorBase):
 
 
 class GestorCatalogos(GestorBase):
-    """Altas y listados de los catálogos auxiliares."""
+    """Altas, listados y validadores de existencia para todos los catálogos auxiliares."""
 
     # --- PAISES ---
     def listar_paises(self):
@@ -49,6 +53,14 @@ class GestorCatalogos(GestorBase):
         try:
             cursor.execute("SELECT clave, nombre FROM pais ORDER BY clave")
             return cursor.fetchall()
+        finally:
+            cursor.close()
+
+    def existe_pais(self, clave):
+        cursor = self.db.obtener_cursor()
+        try:
+            cursor.execute("SELECT 1 FROM pais WHERE clave = %s", (clave.upper(),))
+            return cursor.fetchone() is not None
         finally:
             cursor.close()
 
@@ -75,13 +87,18 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
+    def existe_tipo(self, id_tipo):
+        cursor = self.db.obtener_cursor()
+        try:
+            cursor.execute("SELECT 1 FROM tipo WHERE id_tipo = %s", (id_tipo,))
+            return cursor.fetchone() is not None
+        finally:
+            cursor.close()
+
     def crear_tipo(self, tipo):
         cursor = self.db.obtener_cursor()
         try:
-            cursor.execute(
-                "INSERT INTO tipo (tipo_obra) VALUES (%s)",
-                (tipo.tipo_obra,),
-            )
+            cursor.execute("INSERT INTO tipo (tipo_obra) VALUES (%s)", (tipo.tipo_obra,))
             nuevo_id = cursor.lastrowid
             self.db.confirmar()
             return nuevo_id
@@ -97,6 +114,14 @@ class GestorCatalogos(GestorBase):
         try:
             cursor.execute("SELECT codigo, genero FROM categoria ORDER BY codigo")
             return cursor.fetchall()
+        finally:
+            cursor.close()
+
+    def existe_categoria(self, codigo):
+        cursor = self.db.obtener_cursor()
+        try:
+            cursor.execute("SELECT 1 FROM categoria WHERE codigo = %s", (codigo.upper(),))
+            return cursor.fetchone() is not None
         finally:
             cursor.close()
 
@@ -118,24 +143,28 @@ class GestorCatalogos(GestorBase):
     def listar_autores(self):
         cursor = self.db.obtener_cursor()
         try:
-            sql = """
-                SELECT num_id, nombre_pila, primer_ap, segundo_ap
-                FROM autor
-                ORDER BY num_id
-            """
-            cursor.execute(sql)
+            cursor.execute(
+                "SELECT num_id, nombre_pila, primer_ap, segundo_ap FROM autor ORDER BY num_id"
+            )
             return cursor.fetchall()
+        finally:
+            cursor.close()
+
+    def existe_autor(self, num_id):
+        cursor = self.db.obtener_cursor()
+        try:
+            cursor.execute("SELECT 1 FROM autor WHERE num_id = %s", (num_id,))
+            return cursor.fetchone() is not None
         finally:
             cursor.close()
 
     def crear_autor(self, autor):
         cursor = self.db.obtener_cursor()
         try:
-            sql = """
-                INSERT INTO autor (nombre_pila, primer_ap, segundo_ap)
-                VALUES (%s, %s, %s)
-            """
-            cursor.execute(sql, (autor.nombre_pila, autor.primer_ap, autor.segundo_ap))
+            cursor.execute(
+                "INSERT INTO autor (nombre_pila, primer_ap, segundo_ap) VALUES (%s, %s, %s)",
+                (autor.nombre_pila, autor.primer_ap, autor.segundo_ap),
+            )
             nuevo_id = cursor.lastrowid
             self.db.confirmar()
             return nuevo_id
@@ -157,6 +186,14 @@ class GestorCatalogos(GestorBase):
             """
             cursor.execute(sql)
             return cursor.fetchall()
+        finally:
+            cursor.close()
+
+    def existe_editorial(self, id_editorial):
+        cursor = self.db.obtener_cursor()
+        try:
+            cursor.execute("SELECT 1 FROM editorial WHERE id_editorial = %s", (id_editorial,))
+            return cursor.fetchone() is not None
         finally:
             cursor.close()
 
@@ -193,7 +230,18 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
+    def existe_proveedor(self, rfc):
+        cursor = self.db.obtener_cursor()
+        try:
+            cursor.execute("SELECT 1 FROM proveedor WHERE RFC = %s", (rfc.upper(),))
+            return cursor.fetchone() is not None
+        finally:
+            cursor.close()
+
     def crear_proveedor(self, proveedor):
+        if not proveedor.telefonos:
+            raise ValueError("Debes registrar al menos un teléfono para el proveedor.")
+
         cursor = self.db.obtener_cursor()
         try:
             cursor.execute(
@@ -240,6 +288,17 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
+    def existe_localizacion(self, id_localizacion):
+        cursor = self.db.obtener_cursor()
+        try:
+            cursor.execute(
+                "SELECT 1 FROM localizacion WHERE id_localizacion = %s",
+                (id_localizacion,),
+            )
+            return cursor.fetchone() is not None
+        finally:
+            cursor.close()
+
     def crear_localizacion(self, loc):
         cursor = self.db.obtener_cursor()
         try:
@@ -276,7 +335,18 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
+    def existe_usuario(self, id_usuario):
+        cursor = self.db.obtener_cursor()
+        try:
+            cursor.execute("SELECT 1 FROM usuario WHERE id_usuario = %s", (id_usuario,))
+            return cursor.fetchone() is not None
+        finally:
+            cursor.close()
+
     def crear_usuario(self, usuario):
+        if not usuario.telefonos:
+            raise ValueError("Debes registrar al menos un teléfono para el usuario.")
+
         cursor = self.db.obtener_cursor()
         try:
             sql = """
@@ -399,7 +469,7 @@ class GestorObras(GestorBase):
             cursor.close()
 
     def obtener_localizacion_base(self):
-        """Obtiene el primer id_localizacion disponible (por defecto la localización base)."""
+        """Obtiene el primer id_localizacion disponible (por defecto 'Sin asignar / Recepcion')."""
         cursor = self.db.obtener_cursor()
         try:
             cursor.execute("SELECT MIN(id_localizacion) AS id_loc FROM localizacion")
@@ -407,7 +477,7 @@ class GestorObras(GestorBase):
             if not fila or fila["id_loc"] is None:
                 raise ValueError(
                     "No existe ninguna localización en la base de datos. "
-                    "Registra primero una localización (o inserta la base 'Sin asignar')."
+                    "Registra primero una localización en Catálogos auxiliares."
                 )
             return fila["id_loc"]
         finally:
@@ -427,7 +497,6 @@ class GestorObras(GestorBase):
         loc_final = id_localizacion if id_localizacion is not None else self.obtener_localizacion_base()
         cursor = self.db.obtener_cursor()
         try:
-            # 1. Insertar la obra
             sql_obra = """
                 INSERT INTO obra
                 (isbn, titulo, subtitulo, `año_publicacion`, num_paginas, tipo, categoria)
@@ -446,28 +515,26 @@ class GestorObras(GestorBase):
                 ),
             )
 
-            # 2. Asociar autores (sin duplicados)
             for id_autor in dict.fromkeys(obra.autores):
                 cursor.execute(
                     "INSERT INTO autor_obra (autor, obra) VALUES (%s, %s)",
                     (id_autor, obra.isbn),
                 )
 
-            # 3. Asociar editoriales (sin duplicados)
             for id_ed in dict.fromkeys(obra.editoriales):
                 cursor.execute(
                     "INSERT INTO obra_editorial (editorial, obra) VALUES (%s, %s)",
                     (id_ed, obra.isbn),
                 )
 
-            # 4. Registrar abastecimiento
-            sql_abast = """
+            cursor.execute(
+                """
                 INSERT INTO abastecimiento_obra (proveedor, obra, fecha_adquisicion, cantidad)
                 VALUES (%s, %s, %s, %s)
-            """
-            cursor.execute(sql_abast, (rfc_proveedor.upper(), obra.isbn, fecha_adquisicion, cantidad))
+                """,
+                (rfc_proveedor.upper(), obra.isbn, fecha_adquisicion, cantidad),
+            )
 
-            # 5. Generar N ejemplares consecutivos (1..cantidad)
             for num_ej in range(1, cantidad + 1):
                 cursor.execute(
                     "INSERT INTO ejemplar (obra, ejemplar, localizacion) VALUES (%s, %s, %s)",
@@ -485,7 +552,7 @@ class GestorObras(GestorBase):
     def abastecer_obra_existente(
         self, isbn, rfc_proveedor, fecha_adquisicion, cantidad, id_localizacion=None
     ):
-        """Agrega más ejemplares a una obra ya existente acumulando abastecimiento si se repite proveedor."""
+        """Agrega más ejemplares a una obra existente acumulando abastecimiento si se repite proveedor."""
         if cantidad <= 0:
             raise ValueError("La cantidad debe ser mayor a 0.")
 
@@ -493,7 +560,6 @@ class GestorObras(GestorBase):
         rfc = rfc_proveedor.upper()
         cursor = self.db.obtener_cursor()
         try:
-            # Revisar si (proveedor, obra) ya existe por la PK compuesta
             cursor.execute(
                 "SELECT cantidad FROM abastecimiento_obra WHERE proveedor = %s AND obra = %s",
                 (rfc, isbn),
@@ -548,10 +614,15 @@ class GestorObras(GestorBase):
                        l.seccion, l.pasillo, l.estante,
                        CASE
                            WHEN EXISTS (
-                               SELECT 1 FROM prestamo_ejemplar pe
+                               SELECT 1
+                               FROM prestamo_ejemplar pe
+                               LEFT JOIN devolucion d
+                                 ON d.obra = pe.obra
+                                AND d.ejemplar = pe.ejemplar
+                                AND d.prestamo = pe.prestamo
                                WHERE pe.obra = e.obra
                                  AND pe.ejemplar = e.ejemplar
-                                 AND pe.fecha_devolucion IS NULL
+                                 AND d.id_devolucion IS NULL
                            ) THEN 'Prestado'
                            ELSE 'Disponible'
                        END AS estado
@@ -601,9 +672,38 @@ class GestorObras(GestorBase):
 
 
 class GestorPrestamos(GestorBase):
-    """Registro 3 (Préstamo de ejemplares) y Registro 4 (Devolución de ejemplares)."""
+    """Registro 3 (Préstamo de ejemplares) y Registro 4 (Devolución con multa automática)."""
 
-    def listar_ejemplares_disponibles(self, isbn=None):
+    def listar_resumen_disponibles(self):
+        """Muestra por cada obra únicamente la cantidad de ejemplares actualmente DISPONIBLES."""
+        cursor = self.db.obtener_cursor()
+        try:
+            sql = """
+                SELECT o.isbn, o.titulo, COUNT(e.ejemplar) AS disponibles
+                FROM ejemplar e
+                INNER JOIN obra o ON e.obra = o.isbn
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM prestamo_ejemplar pe
+                    LEFT JOIN devolucion d
+                      ON d.obra = pe.obra
+                     AND d.ejemplar = pe.ejemplar
+                     AND d.prestamo = pe.prestamo
+                    WHERE pe.obra = e.obra
+                      AND pe.ejemplar = e.ejemplar
+                      AND d.id_devolucion IS NULL
+                )
+                GROUP BY o.isbn, o.titulo
+                HAVING COUNT(e.ejemplar) > 0
+                ORDER BY o.titulo
+            """
+            cursor.execute(sql)
+            return cursor.fetchall()
+        finally:
+            cursor.close()
+
+    def obtener_ejemplares_disponibles_por_isbn(self, isbn):
+        """Devuelve la lista de ejemplares disponibles (con su ubicación) para un ISBN específico."""
         cursor = self.db.obtener_cursor()
         try:
             sql = """
@@ -612,19 +712,21 @@ class GestorPrestamos(GestorBase):
                 FROM ejemplar e
                 INNER JOIN obra o ON e.obra = o.isbn
                 INNER JOIN localizacion l ON e.localizacion = l.id_localizacion
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM prestamo_ejemplar pe
-                    WHERE pe.obra = e.obra
-                      AND pe.ejemplar = e.ejemplar
-                      AND pe.fecha_devolucion IS NULL
-                )
+                WHERE e.obra = %s
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM prestamo_ejemplar pe
+                      LEFT JOIN devolucion d
+                        ON d.obra = pe.obra
+                       AND d.ejemplar = pe.ejemplar
+                       AND d.prestamo = pe.prestamo
+                      WHERE pe.obra = e.obra
+                        AND pe.ejemplar = e.ejemplar
+                        AND d.id_devolucion IS NULL
+                  )
+                ORDER BY e.ejemplar
             """
-            params = []
-            if isbn:
-                sql += " AND e.obra = %s"
-                params.append(isbn)
-            sql += " ORDER BY o.titulo, e.ejemplar"
-            cursor.execute(sql, tuple(params))
+            cursor.execute(sql, (isbn,))
             return cursor.fetchall()
         finally:
             cursor.close()
@@ -639,19 +741,24 @@ class GestorPrestamos(GestorBase):
             if cursor.fetchone() is None:
                 return False
 
-            cursor.execute(
-                """
-                SELECT 1 FROM prestamo_ejemplar
-                WHERE obra = %s AND ejemplar = %s AND fecha_devolucion IS NULL
-                """,
-                (isbn, num_ejemplar),
-            )
+            sql = """
+                SELECT 1
+                FROM prestamo_ejemplar pe
+                LEFT JOIN devolucion d
+                  ON d.obra = pe.obra
+                 AND d.ejemplar = pe.ejemplar
+                 AND d.prestamo = pe.prestamo
+                WHERE pe.obra = %s
+                  AND pe.ejemplar = %s
+                  AND d.id_devolucion IS NULL
+            """
+            cursor.execute(sql, (isbn, num_ejemplar))
             return cursor.fetchone() is None
         finally:
             cursor.close()
 
     def registrar_prestamo(self, prestamo):
-        """Registro 3: Crea el préstamo y asocia los ejemplares disponibles."""
+        """Registro 3: Crea el préstamo (fecha_limite = +14 días) y vincula los ejemplares."""
         if not prestamo.ejemplares:
             raise ValueError("Debes incluir al menos un ejemplar en el préstamo.")
 
@@ -680,8 +787,8 @@ class GestorPrestamos(GestorBase):
             folio = cursor.lastrowid
 
             sql_pe = """
-                INSERT INTO prestamo_ejemplar (obra, ejemplar, prestamo, fecha_devolucion)
-                VALUES (%s, %s, %s, NULL)
+                INSERT INTO prestamo_ejemplar (obra, ejemplar, prestamo)
+                VALUES (%s, %s, %s)
             """
             for isbn, num_ej in unicos:
                 cursor.execute(sql_pe, (isbn, num_ej, folio))
@@ -694,12 +801,12 @@ class GestorPrestamos(GestorBase):
         finally:
             cursor.close()
 
-    def listar_prestamos_activos(self, id_usuario=None):
+    def listar_prestamos_activos_resumen(self):
+        """Resumen de préstamos con al menos un ejemplar pendiente de devolución."""
         cursor = self.db.obtener_cursor()
         try:
             sql = """
                 SELECT p.folio, p.fecha_salida, p.fecha_limite,
-                       u.id_usuario,
                        CONCAT_WS(' ', u.nombre_pila, u.primer_ap, u.segundo_ap) AS usuario,
                        CONCAT_WS(' ', e.nombre_pila, e.primer_ap, e.segundo_ap) AS empleado,
                        COUNT(pe.ejemplar) AS pendientes
@@ -707,25 +814,49 @@ class GestorPrestamos(GestorBase):
                 INNER JOIN usuario u ON p.usuario = u.id_usuario
                 INNER JOIN empleado e ON p.empleado = e.id_empleado
                 INNER JOIN prestamo_ejemplar pe ON p.folio = pe.prestamo
-                WHERE pe.fecha_devolucion IS NULL
-            """
-            params = []
-            if id_usuario is not None:
-                sql += " AND p.usuario = %s"
-                params.append(id_usuario)
-
-            sql += """
-                GROUP BY p.folio, p.fecha_salida, p.fecha_limite, u.id_usuario,
+                LEFT JOIN devolucion d
+                  ON d.obra = pe.obra
+                 AND d.ejemplar = pe.ejemplar
+                 AND d.prestamo = pe.prestamo
+                WHERE d.id_devolucion IS NULL
+                GROUP BY p.folio, p.fecha_salida, p.fecha_limite,
                          u.nombre_pila, u.primer_ap, u.segundo_ap,
                          e.nombre_pila, e.primer_ap, e.segundo_ap
                 ORDER BY p.folio
             """
-            cursor.execute(sql, tuple(params))
+            cursor.execute(sql)
+            return cursor.fetchall()
+        finally:
+            cursor.close()
+
+    def listar_prestamos_activos_detalle(self):
+        """Detalle completo de cada ejemplar actualmente prestado (para Opción 7 -> 3)."""
+        cursor = self.db.obtener_cursor()
+        try:
+            sql = """
+                SELECT p.folio, p.fecha_salida, p.fecha_limite,
+                       CONCAT_WS(' ', u.nombre_pila, u.primer_ap, u.segundo_ap) AS usuario,
+                       pe.obra, o.titulo, pe.ejemplar,
+                       CONCAT_WS(' ', e.nombre_pila, e.primer_ap, e.segundo_ap) AS empleado
+                FROM prestamo p
+                INNER JOIN usuario u ON p.usuario = u.id_usuario
+                INNER JOIN empleado e ON p.empleado = e.id_empleado
+                INNER JOIN prestamo_ejemplar pe ON p.folio = pe.prestamo
+                INNER JOIN obra o ON pe.obra = o.isbn
+                LEFT JOIN devolucion d
+                  ON d.obra = pe.obra
+                 AND d.ejemplar = pe.ejemplar
+                 AND d.prestamo = pe.prestamo
+                WHERE d.id_devolucion IS NULL
+                ORDER BY p.folio, o.titulo, pe.ejemplar
+            """
+            cursor.execute(sql)
             return cursor.fetchall()
         finally:
             cursor.close()
 
     def listar_ejemplares_pendientes_prestamo(self, folio):
+        """Lista los ejemplares aún no devueltos de un folio específico."""
         cursor = self.db.obtener_cursor()
         try:
             sql = """
@@ -734,7 +865,11 @@ class GestorPrestamos(GestorBase):
                 FROM prestamo_ejemplar pe
                 INNER JOIN prestamo p ON pe.prestamo = p.folio
                 INNER JOIN obra o ON pe.obra = o.isbn
-                WHERE pe.prestamo = %s AND pe.fecha_devolucion IS NULL
+                LEFT JOIN devolucion d
+                  ON d.obra = pe.obra
+                 AND d.ejemplar = pe.ejemplar
+                 AND d.prestamo = pe.prestamo
+                WHERE pe.prestamo = %s AND d.id_devolucion IS NULL
                 ORDER BY pe.obra, pe.ejemplar
             """
             cursor.execute(sql, (folio,))
@@ -742,14 +877,20 @@ class GestorPrestamos(GestorBase):
         finally:
             cursor.close()
 
-    def registrar_devolucion(self, folio, isbn, num_ejemplar, fecha_devolucion):
-        """Registro 4: Guarda fecha_devolucion y calcula si hubo retraso."""
+    def registrar_devolucion(
+        self, folio, isbn, num_ejemplar, fecha_devolucion, id_empleado, monto_dia=TARIFA_MULTA_DIA
+    ):
+        """Registro 4: Inserta en devolucion y genera automáticamente la multa si hubo retraso."""
         cursor = self.db.obtener_cursor()
         try:
             sql_check = """
-                SELECT p.fecha_salida, p.fecha_limite, pe.fecha_devolucion
+                SELECT p.fecha_salida, p.fecha_limite, d.id_devolucion
                 FROM prestamo_ejemplar pe
                 INNER JOIN prestamo p ON pe.prestamo = p.folio
+                LEFT JOIN devolucion d
+                  ON d.obra = pe.obra
+                 AND d.ejemplar = pe.ejemplar
+                 AND d.prestamo = pe.prestamo
                 WHERE pe.prestamo = %s AND pe.obra = %s AND pe.ejemplar = %s
             """
             cursor.execute(sql_check, (folio, isbn, num_ejemplar))
@@ -757,26 +898,44 @@ class GestorPrestamos(GestorBase):
 
             if not fila:
                 raise ValueError("No se encontró ese ejemplar dentro del préstamo indicado.")
-            if fila["fecha_devolucion"] is not None:
+            if fila["id_devolucion"] is not None:
                 raise ValueError("Ese ejemplar ya fue devuelto anteriormente.")
             if fecha_devolucion < fila["fecha_salida"]:
                 raise ValueError("La fecha de devolución no puede ser anterior a la fecha de salida.")
 
-            cursor.execute(
-                """
-                UPDATE prestamo_ejemplar
-                SET fecha_devolucion = %s
-                WHERE prestamo = %s AND obra = %s AND ejemplar = %s
-                """,
-                (fecha_devolucion, folio, isbn, num_ejemplar),
-            )
-            self.db.confirmar()
+            sql_dev = """
+                INSERT INTO devolucion (fecha_devolucion, empleado, obra, ejemplar, prestamo)
+                VALUES (%s, %s, %s, %s, %s)
+            """
+            cursor.execute(sql_dev, (fecha_devolucion, id_empleado, isbn, num_ejemplar, folio))
+            id_devolucion = cursor.lastrowid
 
             diferencia = (fecha_devolucion - fila["fecha_limite"]).days
+            id_multa = None
+            total_multa = Decimal("0.00")
+
+            if diferencia > 0:
+                tarifa = Decimal(str(monto_dia)).quantize(Decimal("0.01"))
+                total_multa = (tarifa * diferencia).quantize(Decimal("0.01"))
+                sql_multa = """
+                    INSERT INTO multa (devolucion, estado, monto_dia, dias_retraso, total)
+                    VALUES (%s, %s, %s, %s, %s)
+                """
+                cursor.execute(
+                    sql_multa,
+                    (id_devolucion, "Pendiente", tarifa, diferencia, total_multa),
+                )
+                id_multa = cursor.lastrowid
+
+            self.db.confirmar()
             return {
+                "id_devolucion": id_devolucion,
                 "fecha_limite": fila["fecha_limite"],
                 "dias_retraso": diferencia if diferencia > 0 else 0,
                 "con_retraso": diferencia > 0,
+                "id_multa": id_multa,
+                "monto_dia": Decimal(str(monto_dia)).quantize(Decimal("0.01")),
+                "total": total_multa,
             }
         except Error:
             self.db.revertir()
@@ -786,53 +945,50 @@ class GestorPrestamos(GestorBase):
 
 
 class GestorMultas(GestorBase):
-    """Registro 5: Generación y cobro de multas por devoluciones tardías."""
+    """Registro 5: Sincronización automática, consulta y pago de multas."""
 
-    def listar_devoluciones_tardias(self):
-        """Muestra entregas donde fecha_devolucion > fecha_limite para facilitar el alta de multas."""
+    def generar_multas_automaticas(self, monto_dia=TARIFA_MULTA_DIA):
+        """Genera automáticamente multas faltantes para devoluciones tardías sin multa."""
         cursor = self.db.obtener_cursor()
         try:
-            sql = """
-                SELECT p.folio,
-                       CONCAT_WS(' ', u.nombre_pila, u.primer_ap, u.segundo_ap) AS usuario,
-                       pe.obra, o.titulo, pe.ejemplar,
-                       p.fecha_limite, pe.fecha_devolucion,
-                       DATEDIFF(pe.fecha_devolucion, p.fecha_limite) AS dias_retraso,
-                       (SELECT COUNT(*) FROM multa m WHERE m.prestamo = p.folio) AS multas_registradas
-                FROM prestamo_ejemplar pe
-                INNER JOIN prestamo p ON pe.prestamo = p.folio
-                INNER JOIN usuario u ON p.usuario = u.id_usuario
-                INNER JOIN obra o ON pe.obra = o.isbn
-                WHERE pe.fecha_devolucion IS NOT NULL
-                  AND pe.fecha_devolucion > p.fecha_limite
-                ORDER BY p.folio, pe.obra, pe.ejemplar
+            sql_pend = """
+                SELECT d.id_devolucion, d.prestamo, d.obra, d.ejemplar,
+                       DATEDIFF(d.fecha_devolucion, p.fecha_limite) AS dias_retraso
+                FROM devolucion d
+                INNER JOIN prestamo p ON d.prestamo = p.folio
+                LEFT JOIN multa m ON m.devolucion = d.id_devolucion
+                WHERE d.fecha_devolucion > p.fecha_limite
+                  AND m.id_multa IS NULL
+                ORDER BY d.id_devolucion
             """
-            cursor.execute(sql)
-            return cursor.fetchall()
-        finally:
-            cursor.close()
+            cursor.execute(sql_pend)
+            pendientes = cursor.fetchall()
 
-    def registrar_multa(self, multa):
-        """Registro 5: Inserta una multa con estado explícito ('Pendiente' por defecto)."""
-        cursor = self.db.obtener_cursor()
-        try:
-            sql = """
-                INSERT INTO multa (prestamo, estado, monto_dia, dias_retraso, total)
-                VALUES (%s, %s, %s, %s, %s)
-            """
-            cursor.execute(
-                sql,
-                (
-                    multa.prestamo,
-                    multa.estado,
-                    multa.monto_dia,
-                    multa.dias_retraso,
-                    multa.total,
-                ),
-            )
-            num_multa = cursor.lastrowid
+            creadas = []
+            tarifa = Decimal(str(monto_dia)).quantize(Decimal("0.01"))
+            for item in pendientes:
+                dias = item["dias_retraso"]
+                total = (tarifa * dias).quantize(Decimal("0.01"))
+                cursor.execute(
+                    """
+                    INSERT INTO multa (devolucion, estado, monto_dia, dias_retraso, total)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (item["id_devolucion"], "Pendiente", tarifa, dias, total),
+                )
+                creadas.append(
+                    {
+                        "id_multa": cursor.lastrowid,
+                        "prestamo": item["prestamo"],
+                        "obra": item["obra"],
+                        "ejemplar": item["ejemplar"],
+                        "dias_retraso": dias,
+                        "total": total,
+                    }
+                )
+
             self.db.confirmar()
-            return num_multa
+            return creadas
         except Error:
             self.db.revertir()
             raise
@@ -843,27 +999,43 @@ class GestorMultas(GestorBase):
         cursor = self.db.obtener_cursor()
         try:
             sql = """
-                SELECT m.multa, m.prestamo,
+                SELECT m.id_multa, d.prestamo,
                        CONCAT_WS(' ', u.nombre_pila, u.primer_ap, u.segundo_ap) AS usuario,
+                       d.obra, o.titulo, d.ejemplar,
+                       p.fecha_limite, d.fecha_devolucion,
                        m.dias_retraso, m.monto_dia, m.total, m.estado
                 FROM multa m
-                INNER JOIN prestamo p ON m.prestamo = p.folio
+                INNER JOIN devolucion d ON m.devolucion = d.id_devolucion
+                INNER JOIN prestamo p ON d.prestamo = p.folio
                 INNER JOIN usuario u ON p.usuario = u.id_usuario
+                INNER JOIN obra o ON d.obra = o.isbn
             """
             if solo_pendientes:
                 sql += " WHERE m.estado = 'Pendiente'"
-            sql += " ORDER BY m.multa"
+            sql += " ORDER BY m.id_multa"
             cursor.execute(sql)
             return cursor.fetchall()
         finally:
             cursor.close()
 
-    def marcar_pagada(self, num_multa, folio_prestamo):
+    def obtener_multa(self, id_multa):
         cursor = self.db.obtener_cursor()
         try:
             cursor.execute(
-                "UPDATE multa SET estado = 'Pagada' WHERE multa = %s AND prestamo = %s",
-                (num_multa, folio_prestamo),
+                "SELECT id_multa, devolucion, estado, total FROM multa WHERE id_multa = %s",
+                (id_multa,),
+            )
+            return cursor.fetchone()
+        finally:
+            cursor.close()
+
+    def marcar_pagada(self, id_multa):
+        """Marca una multa pendiente como 'Pagada' usando únicamente su ID de multa."""
+        cursor = self.db.obtener_cursor()
+        try:
+            cursor.execute(
+                "UPDATE multa SET estado = 'Pagada' WHERE id_multa = %s AND estado = 'Pendiente'",
+                (id_multa,),
             )
             afectados = cursor.rowcount
             self.db.confirmar()

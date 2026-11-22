@@ -1,13 +1,8 @@
-"""Funciones auxiliares para menús, validaciones de entrada y tablas en terminal con rich."""
+"""Funciones auxiliares en consola estándar (sin librerías externas) para validaciones y tablas."""
 
 import os
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
-
-consola = Console()
 
 
 def limpiar_pantalla():
@@ -17,43 +12,63 @@ def limpiar_pantalla():
 
 def pausar(mensaje="Presiona ENTER para continuar..."):
     """Detiene la ejecución hasta que el usuario presione Enter."""
-    consola.input(f"\n[dim]{mensaje}[/dim]")
+    input(f"\n{mensaje}")
 
 
 def mostrar_titulo(titulo, subtitulo=""):
-    """Muestra un encabezado resaltado en un panel."""
-    cuerpo = f"[bold cyan]{titulo}[/bold cyan]"
+    """Muestra un encabezado limpio en texto plano."""
+    linea = "=" * max(55, len(titulo) + 4)
+    print(linea)
+    print(f"  {titulo}")
     if subtitulo:
-        cuerpo += f"\n[dim]{subtitulo}[/dim]"
-    consola.print(Panel(cuerpo, expand=False, border_style="cyan"))
+        print(f"  {subtitulo}")
+    print(linea)
+    print()
 
 
 def mostrar_exito(mensaje):
-    consola.print(f"[bold green]✔ {mensaje}[/bold green]")
+    print(f"[OK] {mensaje}")
 
 
 def mostrar_error(mensaje):
-    consola.print(f"[bold red]✖ {mensaje}[/bold red]")
+    print(f"[ERROR] {mensaje}")
 
 
 def mostrar_aviso(mensaje):
-    consola.print(f"[bold yellow]⚠ {mensaje}[/bold yellow]")
+    print(f"[AVISO] {mensaje}")
 
 
 def mostrar_tabla(titulo, columnas, filas):
-    """Dibuja una tabla formateada en terminal con rich."""
+    """Dibuja una tabla alineada en texto plano sin dependencias externas."""
+    print(f"\n--- {titulo} ---")
     if not filas:
-        mostrar_aviso(f"No hay registros para mostrar en '{titulo}'.")
+        print("(Sin registros para mostrar)\n")
         return
 
-    tabla = Table(title=titulo, show_lines=True, header_style="bold cyan")
-    for col in columnas:
-        tabla.add_column(str(col))
-
+    filas_texto = []
     for fila in filas:
-        tabla.add_row(*["-" if valor is None else str(valor) for valor in fila])
+        filas_texto.append(["-" if valor is None else str(valor) for valor in fila])
 
-    consola.print(tabla)
+    anchos = []
+    for i, col in enumerate(columnas):
+        max_dato = max(len(f[i]) for f in filas_texto)
+        anchos.append(max(len(str(col)), max_dato))
+
+    separador = "+" + "+".join("-" * (ancho + 2) for ancho in anchos) + "+"
+    encabezado = "| " + " | ".join(
+        f"{str(col):<{anchos[i]}}" for i, col in enumerate(columnas)
+    ) + " |"
+
+    print(separador)
+    print(encabezado)
+    print(separador)
+    for fila in filas_texto:
+        linea = "| " + " | ".join(
+            f"{fila[i]:<{anchos[i]}}" for i in range(len(columnas))
+        ) + " |"
+        print(linea)
+    print(separador)
+    print()
 
 
 def pedir_texto(etiqueta, max_len=None, obligatorio=True, valor_defecto=None):
@@ -63,7 +78,7 @@ def pedir_texto(etiqueta, max_len=None, obligatorio=True, valor_defecto=None):
         if not obligatorio and valor_defecto is None:
             sufijo = " (opcional, Enter para omitir)"
 
-        valor = consola.input(f"[bold]{etiqueta}{sufijo}:[/bold] ").strip()
+        valor = input(f"{etiqueta}{sufijo}: ").strip()
 
         if not valor:
             if valor_defecto is not None:
@@ -84,7 +99,7 @@ def pedir_texto(etiqueta, max_len=None, obligatorio=True, valor_defecto=None):
 def pedir_entero(etiqueta, minimo=None, maximo=None):
     """Solicita un número entero dentro de un rango opcional."""
     while True:
-        texto = consola.input(f"[bold]{etiqueta}:[/bold] ").strip()
+        texto = input(f"{etiqueta}: ").strip()
         try:
             numero = int(texto)
         except ValueError:
@@ -102,9 +117,9 @@ def pedir_entero(etiqueta, minimo=None, maximo=None):
 
 
 def pedir_decimal(etiqueta, minimo=Decimal("0.00")):
-    """Solicita un monto decimal exacto (para evitar errores de redondeo con dinero)."""
+    """Solicita un monto decimal exacto."""
     while True:
-        texto = consola.input(f"[bold]{etiqueta}:[/bold] ").strip()
+        texto = input(f"{etiqueta}: ").strip()
         try:
             monto = Decimal(texto)
         except InvalidOperation:
@@ -119,11 +134,11 @@ def pedir_decimal(etiqueta, minimo=Decimal("0.00")):
 
 
 def pedir_fecha(etiqueta, permitir_hoy=True):
-    """Solicita una fecha en formato AAAA-MM-DD."""
+    """Solicita y valida inmediatamente una fecha en formato AAAA-MM-DD."""
     hoy = date.today()
     while True:
         ayuda = f" (AAAA-MM-DD, Enter = {hoy})" if permitir_hoy else " (AAAA-MM-DD)"
-        texto = consola.input(f"[bold]{etiqueta}{ayuda}:[/bold] ").strip()
+        texto = input(f"{etiqueta}{ayuda}: ").strip()
 
         if not texto and permitir_hoy:
             return hoy
@@ -131,13 +146,13 @@ def pedir_fecha(etiqueta, permitir_hoy=True):
         try:
             return datetime.strptime(texto, "%Y-%m-%d").date()
         except ValueError:
-            mostrar_error("Formato inválido. Usa AAAA-MM-DD (ejemplo: 2026-11-19).")
+            mostrar_error("Formato de fecha inválido. Usa AAAA-MM-DD (ejemplo: 2026-11-21).")
 
 
 def confirmar(etiqueta):
     """Pide confirmación Sí/No al usuario."""
     while True:
-        resp = consola.input(f"[bold yellow]{etiqueta} (s/n):[/bold yellow] ").strip().lower()
+        resp = input(f"{etiqueta} (s/n): ").strip().lower()
         if resp in ("s", "si", "sí"):
             return True
         if resp in ("n", "no"):

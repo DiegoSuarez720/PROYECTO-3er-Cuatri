@@ -1,7 +1,6 @@
-"""Archivo principal con los menús en terminal (CLI) para Registros y Catálogos."""
+"""Archivo principal con los menús en terminal (CLI estándar) para Registros y Catálogos."""
 
 from datetime import timedelta
-from decimal import Decimal
 from mysql.connector import Error
 
 from conexion import ConexionDB
@@ -11,7 +10,6 @@ from modelos import (
     Editorial,
     Empleado,
     Localizacion,
-    Multa,
     Obra,
     Pais,
     Prestamo,
@@ -25,10 +23,10 @@ from operaciones import (
     GestorMultas,
     GestorObras,
     GestorPrestamos,
+    TARIFA_MULTA_DIA,
 )
 from utilidades import (
     confirmar,
-    consola,
     limpiar_pantalla,
     mostrar_aviso,
     mostrar_error,
@@ -36,7 +34,6 @@ from utilidades import (
     mostrar_tabla,
     mostrar_titulo,
     pausar,
-    pedir_decimal,
     pedir_entero,
     pedir_fecha,
     pedir_texto,
@@ -44,7 +41,7 @@ from utilidades import (
 
 
 class AplicacionBiblioteca:
-    """Controla el flujo de menús de terminal para los 5 registros y catálogos."""
+    """Controla el flujo de menús en terminal para los 5 registros y catálogos."""
 
     def __init__(self):
         self.auth = GestorAuth()
@@ -69,7 +66,7 @@ class AplicacionBiblioteca:
                 self.menu_principal()
         finally:
             ConexionDB().cerrar()
-            consola.print("\n[cyan]Conexión cerrada. ¡Hasta luego![/cyan]")
+            print("\nConexión cerrada. ¡Hasta luego!")
 
     # ==========================================================
     # INICIO DE SESIÓN
@@ -112,16 +109,15 @@ class AplicacionBiblioteca:
                 "MENÚ PRINCIPAL - REGISTROS Y CATÁLOGOS",
                 f"Empleado en sesión: {self.empleado_activo.nombre_completo} (@{self.empleado_activo.nombre_user})",
             )
-            consola.print(
-                "[bold]1.[/bold] Registro 1: Obra completa / Abastecer ejemplares\n"
-                "[bold]2.[/bold] Registro 2: Asignar localización a ejemplares\n"
-                "[bold]3.[/bold] Registro 3: Préstamo de ejemplares\n"
-                "[bold]4.[/bold] Registro 4: Devolución de ejemplares\n"
-                "[bold]5.[/bold] Registro 5: Multas por devolución tardía\n"
-                "[bold]6.[/bold] Catálogos auxiliares (Autores, Usuarios, Proveedores, etc.)\n"
-                "[bold]7.[/bold] Listados rápidos de apoyo\n"
-                "[bold]0.[/bold] Cerrar sesión\n"
-            )
+            print("1. Registro 1: Obra completa / Abastecer ejemplares")
+            print("2. Registro 2: Asignar localización a ejemplares")
+            print("3. Registro 3: Préstamo de ejemplares")
+            print("4. Registro 4: Devolución de ejemplares")
+            print("5. Registro 5: Multas por devolución tardía")
+            print("6. Catálogos auxiliares (Autores, Usuarios, Proveedores, etc.)")
+            print("7. Listados rápidos de apoyo")
+            print("0. Cerrar sesión\n")
+
             opcion = pedir_entero("Selecciona una opción", minimo=0, maximo=7)
 
             if opcion == 1:
@@ -151,11 +147,10 @@ class AplicacionBiblioteca:
             "REGISTRO 1: OBRA COMPLETA Y ABASTECIMIENTO",
             "Registra una obra nueva o agrega más ejemplares a una existente",
         )
-        consola.print(
-            "[bold]1.[/bold] Registrar obra nueva (con autores, editorial, proveedor y ejemplares)\n"
-            "[bold]2.[/bold] Abastecer más ejemplares a una obra ya registrada\n"
-            "[bold]0.[/bold] Volver\n"
-        )
+        print("1. Registrar obra nueva (con autores, editorial, proveedor y ejemplares)")
+        print("2. Abastecer más ejemplares a una obra ya registrada")
+        print("0. Volver\n")
+
         op = pedir_entero("Opción", minimo=0, maximo=2)
         if op == 0:
             return
@@ -163,7 +158,6 @@ class AplicacionBiblioteca:
             self._abastecer_existente()
             return
 
-        # Validar catálogos previos obligatorios
         tipos = self.catalogos.listar_tipos()
         categorias = self.catalogos.listar_categorias()
         autores = self.catalogos.listar_autores()
@@ -195,11 +189,16 @@ class AplicacionBiblioteca:
             return
 
         try:
-            isbn = pedir_texto("ISBN (máx. 17 caracteres)", max_len=17)
-            if self.obras.existe_obra(isbn):
-                mostrar_aviso("Ese ISBN ya existe. Usa la opción 2 para abastecer más ejemplares.")
-                pausar()
-                return
+            while True:
+                isbn = pedir_texto("ISBN (máx. 17 caracteres, escribe 0 para cancelar)", max_len=17)
+                if isbn == "0":
+                    mostrar_aviso("Operación cancelada.")
+                    pausar()
+                    return
+                if self.obras.existe_obra(isbn):
+                    mostrar_aviso("Ese ISBN ya existe. Usa otro ISBN o elige la opción 2 para abastecer.")
+                    continue
+                break
 
             titulo = pedir_texto("Título (máx. 50 caracteres)", max_len=50)
             subtitulo = pedir_texto("Subtítulo (máx. 100 caracteres)", max_len=100, obligatorio=False)
@@ -207,41 +206,85 @@ class AplicacionBiblioteca:
             paginas = pedir_entero("Número de páginas", minimo=1)
 
             self._mostrar_tipos(tipos)
-            id_tipo = pedir_entero("ID del tipo de obra", minimo=1)
+            while True:
+                id_tipo = pedir_entero("ID del tipo de obra (0 para cancelar)", minimo=0)
+                if id_tipo == 0:
+                    return
+                if not self.catalogos.existe_tipo(id_tipo):
+                    mostrar_error("Ese ID de tipo de obra no existe.")
+                    continue
+                break
 
             self._mostrar_categorias(categorias)
-            cod_categoria = pedir_texto("Código de categoría", max_len=5).upper()
+            while True:
+                cod_categoria = pedir_texto("Código de categoría (0 para cancelar)", max_len=5).upper()
+                if cod_categoria == "0":
+                    return
+                if not self.catalogos.existe_categoria(cod_categoria):
+                    mostrar_error("Ese código de categoría no existe.")
+                    continue
+                break
 
-            # Selección de autores (1 o más)
+            # Selección de autores (1 o más, con validación inmediata)
             self._mostrar_autores(autores)
             ids_autores = []
             while True:
-                id_autor = pedir_entero("ID del autor a asociar", minimo=1)
-                if id_autor not in ids_autores:
+                id_autor = pedir_entero("ID del autor a asociar (0 para cancelar)", minimo=0)
+                if id_autor == 0:
+                    return
+                if not self.catalogos.existe_autor(id_autor):
+                    mostrar_error("Ese ID de autor no existe.")
+                    continue
+                if id_autor in ids_autores:
+                    mostrar_aviso("Ese autor ya fue agregado a esta obra.")
+                else:
                     ids_autores.append(id_autor)
-                if not confirmar("¿Agregar otro autor a esta obra?"):
+                if not confirmar("¿Deseas agregar OTRO autor a esta obra?"):
                     break
 
-            # Selección de editoriales (1 o más)
+            # Selección de editoriales (1 o más, con validación inmediata)
             self._mostrar_editoriales(editoriales)
             ids_editoriales = []
             while True:
-                id_ed = pedir_entero("ID de la editorial a asociar", minimo=1)
-                if id_ed not in ids_editoriales:
+                id_ed = pedir_entero("ID de la editorial a asociar (0 para cancelar)", minimo=0)
+                if id_ed == 0:
+                    return
+                if not self.catalogos.existe_editorial(id_ed):
+                    mostrar_error("Ese ID de editorial no existe.")
+                    continue
+                if id_ed in ids_editoriales:
+                    mostrar_aviso("Esa editorial ya fue agregada a esta obra.")
+                else:
                     ids_editoriales.append(id_ed)
-                if not confirmar("¿Agregar otra editorial a esta obra?"):
+                if not confirmar("¿Deseas agregar OTRA editorial a esta obra?"):
                     break
 
             # Abastecimiento
             self._mostrar_proveedores(proveedores)
-            rfc_prov = pedir_texto("RFC del proveedor", max_len=13).upper()
+            while True:
+                rfc_prov = pedir_texto("RFC del proveedor (0 para cancelar)", max_len=13).upper()
+                if rfc_prov == "0":
+                    return
+                if not self.catalogos.existe_proveedor(rfc_prov):
+                    mostrar_error("Ese RFC de proveedor no existe.")
+                    continue
+                break
+
             fecha_adq = pedir_fecha("Fecha de adquisición")
             cantidad = pedir_entero("Cantidad de ejemplares recibidos", minimo=1)
 
             id_loc = None
             if confirmar("¿Deseas asignar una localización específica desde ahora? (No = Sin asignar)"):
                 self._mostrar_localizaciones(localizaciones)
-                id_loc = pedir_entero("ID de localización", minimo=1)
+                while True:
+                    id_loc = pedir_entero("ID de localización (0 para usar Sin asignar)", minimo=0)
+                    if id_loc == 0:
+                        id_loc = None
+                        break
+                    if not self.catalogos.existe_localizacion(id_loc):
+                        mostrar_error("Ese ID de localización no existe.")
+                        continue
+                    break
 
             obra = Obra(
                 isbn=isbn,
@@ -276,14 +319,25 @@ class AplicacionBiblioteca:
             return
 
         self._mostrar_obras(obras)
-        isbn = pedir_texto("ISBN de la obra a abastecer", max_len=17)
-        if not self.obras.existe_obra(isbn):
-            mostrar_error("No se encontró ninguna obra con ese ISBN.")
-            pausar()
-            return
+        while True:
+            isbn = pedir_texto("ISBN de la obra a abastecer (0 para cancelar)", max_len=17)
+            if isbn == "0":
+                return
+            if not self.obras.existe_obra(isbn):
+                mostrar_error("No se encontró ninguna obra con ese ISBN.")
+                continue
+            break
 
         self._mostrar_proveedores(proveedores)
-        rfc_prov = pedir_texto("RFC del proveedor", max_len=13).upper()
+        while True:
+            rfc_prov = pedir_texto("RFC del proveedor (0 para cancelar)", max_len=13).upper()
+            if rfc_prov == "0":
+                return
+            if not self.catalogos.existe_proveedor(rfc_prov):
+                mostrar_error("Ese RFC de proveedor no existe.")
+                continue
+            break
+
         fecha_adq = pedir_fecha("Fecha de adquisición")
         cantidad = pedir_entero("Cantidad de nuevos ejemplares", minimo=1)
 
@@ -291,7 +345,15 @@ class AplicacionBiblioteca:
         if confirmar("¿Asignar una localización específica a estos ejemplares?"):
             locs = self.catalogos.listar_localizaciones()
             self._mostrar_localizaciones(locs)
-            id_loc = pedir_entero("ID de localización", minimo=1)
+            while True:
+                id_loc = pedir_entero("ID de localización (0 para Sin asignar)", minimo=0)
+                if id_loc == 0:
+                    id_loc = None
+                    break
+                if not self.catalogos.existe_localizacion(id_loc):
+                    mostrar_error("Ese ID de localización no existe.")
+                    continue
+                break
 
         try:
             inicio, fin = self.obras.abastecer_obra_existente(
@@ -322,12 +384,15 @@ class AplicacionBiblioteca:
             return
 
         self._mostrar_obras(obras)
-        isbn = pedir_texto("ISBN de la obra", max_len=17)
-        ejemplares = self.obras.listar_ejemplares_obra(isbn)
-        if not ejemplares:
-            mostrar_aviso("Esa obra no existe o no tiene ejemplares registrados.")
-            pausar()
-            return
+        while True:
+            isbn = pedir_texto("ISBN de la obra (0 para cancelar)", max_len=17)
+            if isbn == "0":
+                return
+            ejemplares = self.obras.listar_ejemplares_obra(isbn)
+            if not ejemplares:
+                mostrar_error("Esa obra no existe o no tiene ejemplares registrados.")
+                continue
+            break
 
         filas = [
             (e["ejemplar"], e["localizacion"], e["seccion"], e["pasillo"], e["estante"], e["estado"])
@@ -340,19 +405,31 @@ class AplicacionBiblioteca:
         )
 
         self._mostrar_localizaciones(locs)
-        id_loc = pedir_entero("Nuevo ID de localización", minimo=1)
+        while True:
+            id_loc = pedir_entero("Nuevo ID de localización (0 para cancelar)", minimo=0)
+            if id_loc == 0:
+                return
+            if not self.catalogos.existe_localizacion(id_loc):
+                mostrar_error("Ese ID de localización no existe.")
+                continue
+            break
 
         try:
             if confirmar("¿Aplicar esta localización a TODOS los ejemplares de esta obra?"):
                 afectados = self.obras.asignar_localizacion_todos(isbn, id_loc)
                 mostrar_exito(f"Se actualizaron {afectados} ejemplares a la localización #{id_loc}.")
             else:
-                num_ej = pedir_entero("Número de ejemplar específico", minimo=1)
-                afectados = self.obras.asignar_localizacion_ejemplar(isbn, num_ej, id_loc)
-                if afectados:
-                    mostrar_exito(f"Ejemplar #{num_ej} actualizado a la localización #{id_loc}.")
-                else:
-                    mostrar_aviso("No se encontró ese número de ejemplar para el ISBN indicado.")
+                numeros_validos = [e["ejemplar"] for e in ejemplares]
+                while True:
+                    num_ej = pedir_entero("Número de ejemplar específico (0 para cancelar)", minimo=0)
+                    if num_ej == 0:
+                        return
+                    if num_ej not in numeros_validos:
+                        mostrar_error(f"Ese ejemplar no existe. Disponibles en esta obra: {numeros_validos}")
+                        continue
+                    break
+                self.obras.asignar_localizacion_ejemplar(isbn, num_ej, id_loc)
+                mostrar_exito(f"Ejemplar #{num_ej} actualizado a la localización #{id_loc}.")
         except Error as e:
             mostrar_error(f"Error al actualizar localización: {e}")
 
@@ -363,43 +440,100 @@ class AplicacionBiblioteca:
     # ==========================================================
     def flujo_registrar_prestamo(self):
         limpiar_pantalla()
-        mostrar_titulo("REGISTRO 3: PRÉSTAMO DE EJEMPLARES")
+        mostrar_titulo(
+            "REGISTRO 3: PRÉSTAMO DE EJEMPLARES",
+            "Plazo automático de devolución: 2 semanas (14 días)",
+        )
 
         usuarios = self.catalogos.listar_usuarios()
-        disponibles = self.prestamos.listar_ejemplares_disponibles()
+        resumen_disp = self.prestamos.listar_resumen_disponibles()
         if not usuarios:
             mostrar_aviso("Registra primero al menos un usuario en Catálogos auxiliares.")
             pausar()
             return
-        if not disponibles:
+        if not resumen_disp:
             mostrar_aviso("No hay ejemplares disponibles para préstamo.")
             pausar()
             return
 
+        # 1. Seleccionar y validar usuario INMEDIATAMENTE
         self._mostrar_usuarios(usuarios)
-        id_usuario = pedir_entero("ID del usuario que solicita el préstamo", minimo=1)
+        while True:
+            id_usuario = pedir_entero("ID del usuario (0 para cancelar)", minimo=0)
+            if id_usuario == 0:
+                mostrar_aviso("Préstamo cancelado.")
+                pausar()
+                return
+            if not self.catalogos.existe_usuario(id_usuario):
+                mostrar_error("No existe ningún usuario con ese ID. Intenta de nuevo.")
+                continue
+            break
 
+        # 2. Fecha de salida y cálculo automático de fecha límite (+14 días)
         fecha_salida = pedir_fecha("Fecha de salida del préstamo")
-        sugerida = fecha_salida + timedelta(days=7)
-        consola.print(f"[dim]Sugerencia de fecha límite (+7 días): {sugerida}[/dim]")
-        fecha_limite = pedir_fecha("Fecha límite de devolución", permitir_hoy=False)
+        fecha_limite = fecha_salida + timedelta(days=Prestamo.DIAS_PLAZO)
+        print(f"Fecha límite calculada automáticamente (+14 días): {fecha_limite}")
 
-        self._mostrar_disponibles(disponibles)
+        # 3. Mostrar resumen de obras con cantidad de ejemplares DISPONIBLES
+        self._mostrar_resumen_disponibles(resumen_disp)
+
+        # 4. Selección guiada paso a paso: ISBN -> números disponibles -> ejemplar
         seleccionados = []
         while True:
-            isbn = pedir_texto("ISBN del ejemplar a prestar", max_len=17)
-            num_ej = pedir_entero("Número de ejemplar", minimo=1)
-
-            if (isbn, num_ej) in seleccionados:
-                mostrar_aviso("Ese ejemplar ya fue agregado a este préstamo.")
-            elif not self.prestamos.ejemplar_disponible(isbn, num_ej):
-                mostrar_error("Ese ejemplar no existe o ya se encuentra prestado.")
-            else:
-                seleccionados.append((isbn, num_ej))
-                mostrar_exito(f"Agregado: {isbn} - Ejemplar #{num_ej}")
-
-            if not confirmar("¿Agregar otro ejemplar a este mismo préstamo?"):
+            isbn = pedir_texto(
+                "ISBN de la obra a prestar (escribe 0 para terminar/cancelar)",
+                max_len=17,
+            )
+            if isbn == "0":
                 break
+
+            if not self.obras.existe_obra(isbn):
+                mostrar_error("Ese ISBN no existe en el catálogo. Intenta con otro.")
+                continue
+
+            copias_bd = self.prestamos.obtener_ejemplares_disponibles_por_isbn(isbn)
+            copias_libres = [
+                c for c in copias_bd if (isbn, c["ejemplar"]) not in seleccionados
+            ]
+
+            if not copias_libres:
+                mostrar_aviso(
+                    "Esta obra ya no tiene ejemplares disponibles (están prestados o ya los agregaste)."
+                )
+                continue
+
+            numeros_libres = [c["ejemplar"] for c in copias_libres]
+            titulo_obra = copias_libres[0]["titulo"]
+            lista_txt = ", ".join(f"#{n}" for n in numeros_libres)
+            print(f"\nObra: {titulo_obra}")
+            print(f"Ejemplares disponibles para prestar: {lista_txt}")
+
+            while True:
+                num_ej = pedir_entero(
+                    "Número de ejemplar a prestar (0 para elegir otro ISBN)",
+                    minimo=0,
+                )
+                if num_ej == 0:
+                    break
+                if num_ej not in numeros_libres:
+                    mostrar_error(
+                        f"El ejemplar #{num_ej} no existe o no está disponible. "
+                        f"Opciones válidas: {lista_txt}"
+                    )
+                    if confirmar("¿Deseas ingresar otro ISBN o cancelar este paso?"):
+                        break
+                    continue
+
+                seleccionados.append((isbn, num_ej))
+                mostrar_exito(f"Agregado al préstamo: {titulo_obra} ({isbn}) - Ejemplar #{num_ej}")
+                break
+
+            if seleccionados:
+                if not confirmar("¿Deseas agregar OTRO ejemplar a este mismo préstamo?"):
+                    break
+            else:
+                if not confirmar("Aún no agregas ejemplares. ¿Deseas intentar con otro ISBN?"):
+                    break
 
         if not seleccionados:
             mostrar_aviso("Préstamo cancelado (no se seleccionaron ejemplares).")
@@ -416,8 +550,8 @@ class AplicacionBiblioteca:
             )
             folio = self.prestamos.registrar_prestamo(prestamo)
             mostrar_exito(
-                f"Préstamo registrado correctamente con Folio #{folio} "
-                f"({len(seleccionados)} ejemplar(es))."
+                f"Préstamo registrado correctamente con Folio #{folio} | "
+                f"Ejemplares: {len(seleccionados)} | Fecha límite: {fecha_limite}"
             )
         except (ValueError, Error) as e:
             mostrar_error(f"No se pudo registrar el préstamo: {e}")
@@ -425,29 +559,33 @@ class AplicacionBiblioteca:
         pausar()
 
     # ==========================================================
-    # REGISTRO 4: DEVOLUCIÓN DE EJEMPLARES
+    # REGISTRO 4: DEVOLUCIÓN DE EJEMPLARES (CON MULTA AUTOMÁTICA)
     # ==========================================================
     def flujo_registrar_devolucion(self):
         limpiar_pantalla()
         mostrar_titulo(
             "REGISTRO 4: DEVOLUCIÓN DE EJEMPLARES",
-            f"Gestionado por: {self.empleado_activo.nombre_completo}",
+            f"Recibe: {self.empleado_activo.nombre_completo} (multa automática si hay retraso: ${TARIFA_MULTA_DIA}/día)",
         )
 
-        activos = self.prestamos.listar_prestamos_activos()
+        activos = self.prestamos.listar_prestamos_activos_resumen()
         if not activos:
             mostrar_aviso("No hay préstamos activos con devoluciones pendientes.")
             pausar()
             return
 
-        self._mostrar_prestamos_activos(activos)
-        folio = pedir_entero("Folio del préstamo a devolver", minimo=1)
+        self._mostrar_prestamos_activos_resumen(activos)
 
-        pendientes = self.prestamos.listar_ejemplares_pendientes_prestamo(folio)
-        if not pendientes:
-            mostrar_aviso("Ese folio no existe o ya no tiene ejemplares pendientes.")
-            pausar()
-            return
+        # 1. Validar folio inmediatamente
+        while True:
+            folio = pedir_entero("Folio del préstamo a devolver (0 para cancelar)", minimo=0)
+            if folio == 0:
+                return
+            pendientes = self.prestamos.listar_ejemplares_pendientes_prestamo(folio)
+            if not pendientes:
+                mostrar_error("Ese folio no existe o ya no tiene ejemplares pendientes.")
+                continue
+            break
 
         filas = [
             (p["obra"], p["titulo"], p["ejemplar"], p["fecha_salida"], p["fecha_limite"])
@@ -459,22 +597,62 @@ class AplicacionBiblioteca:
             filas,
         )
 
-        isbn = pedir_texto("ISBN del ejemplar devuelto", max_len=17)
-        num_ej = pedir_entero("Número de ejemplar devuelto", minimo=1)
-        fecha_dev = pedir_fecha("Fecha real de devolución")
+        # 2. Validar ISBN inmediatamente contra los pendientes del folio
+        isbns_pendientes = list(dict.fromkeys(p["obra"] for p in pendientes))
+        while True:
+            isbn = pedir_texto("ISBN del ejemplar devuelto (0 para cancelar)", max_len=17)
+            if isbn == "0":
+                return
+            if isbn not in isbns_pendientes:
+                mostrar_error("Ese ISBN no corresponde a ningún ejemplar pendiente de este préstamo.")
+                continue
+            break
+
+        # 3. Validar número de ejemplar inmediatamente antes de pedir la fecha
+        ejemplares_isbn = [p for p in pendientes if p["obra"] == isbn]
+        nums_validos = [p["ejemplar"] for p in ejemplares_isbn]
+        print(f"Ejemplares pendientes de '{ejemplares_isbn[0]['titulo']}': {', '.join(f'#{n}' for n in nums_validos)}")
+
+        while True:
+            num_ej = pedir_entero("Número de ejemplar devuelto (0 para cancelar)", minimo=0)
+            if num_ej == 0:
+                return
+            if num_ej not in nums_validos:
+                mostrar_error(
+                    f"El ejemplar #{num_ej} no está pendiente en este préstamo. "
+                    f"Opciones válidas: {nums_validos}"
+                )
+                continue
+            break
+
+        # 4. Validar fecha real de devolución inmediatamente contra fecha_salida
+        fecha_salida = ejemplares_isbn[0]["fecha_salida"]
+        while True:
+            fecha_dev = pedir_fecha("Fecha real de devolución")
+            if fecha_dev < fecha_salida:
+                mostrar_error(
+                    f"La fecha de devolución no puede ser anterior a la fecha de salida ({fecha_salida})."
+                )
+                continue
+            break
 
         try:
-            resultado = self.prestamos.registrar_devolucion(folio, isbn, num_ej, fecha_dev)
+            resultado = self.prestamos.registrar_devolucion(
+                folio, isbn, num_ej, fecha_dev, self.empleado_activo.id_empleado
+            )
+            mostrar_exito(f"Devolución #{resultado['id_devolucion']} registrada correctamente.")
             if resultado["con_retraso"]:
-                dias = resultado["dias_retraso"]
                 mostrar_aviso(
-                    f"Devolución registrada CON RETRASO de {dias} día(s) "
+                    f"Entrega con RETRASO de {resultado['dias_retraso']} día(s) "
                     f"(fecha límite: {resultado['fecha_limite']})."
                 )
-                if confirmar("¿Deseas generar la multa por retraso en este momento?"):
-                    self._crear_multa_directa(folio, dias)
+                mostrar_aviso(
+                    f"Multa #{resultado['id_multa']} generada automáticamente: "
+                    f"{resultado['dias_retraso']} día(s) x ${resultado['monto_dia']} = "
+                    f"${resultado['total']} [Pendiente]."
+                )
             else:
-                mostrar_exito("Devolución registrada a tiempo sin recargos.")
+                mostrar_exito("Devolución entregada a tiempo (sin multa).")
         except (ValueError, Error) as e:
             mostrar_error(f"No se pudo registrar la devolución: {e}")
 
@@ -486,45 +664,37 @@ class AplicacionBiblioteca:
     def flujo_multas(self):
         while True:
             limpiar_pantalla()
-            mostrar_titulo("REGISTRO 5: MULTAS POR DEVOLUCIÓN TARDÍA")
-            consola.print(
-                "[bold]1.[/bold] Registrar multa a partir de devoluciones tardías\n"
-                "[bold]2.[/bold] Marcar una multa pendiente como 'Pagada'\n"
-                "[bold]3.[/bold] Ver todas las multas registradas\n"
-                "[bold]0.[/bold] Volver\n"
+            mostrar_titulo(
+                "REGISTRO 5: MULTAS POR DEVOLUCIÓN TARDÍA",
+                f"Las multas se generan automáticamente al devolver tarde (${TARIFA_MULTA_DIA}/día)",
             )
+            print("1. Generar automáticamente multas faltantes (para devoluciones tardías sin multa)")
+            print("2. Marcar una multa pendiente como 'Pagada'")
+            print("3. Ver historial completo de multas")
+            print("0. Volver\n")
+
             op = pedir_entero("Opción", minimo=0, maximo=3)
 
             if op == 0:
                 break
             elif op == 1:
-                tardias = self.multas.listar_devoluciones_tardias()
-                if not tardias:
-                    mostrar_aviso("No hay devoluciones tardías registradas.")
-                    pausar()
-                    continue
-
-                filas = [
-                    (
-                        t["folio"],
-                        t["usuario"],
-                        t["obra"],
-                        t["ejemplar"],
-                        t["fecha_limite"],
-                        t["fecha_devolucion"],
-                        t["dias_retraso"],
-                        t["multas_registradas"],
-                    )
-                    for t in tardias
-                ]
-                mostrar_tabla(
-                    "Devoluciones tardías detectadas",
-                    ["Folio", "Usuario", "ISBN", "Ej. #", "Límite", "Devolución", "Días", "Multas"],
-                    filas,
-                )
-                folio = pedir_entero("Folio del préstamo a multar", minimo=1)
-                dias = pedir_entero("Días de retraso", minimo=1)
-                self._crear_multa_directa(folio, dias)
+                try:
+                    creadas = self.multas.generar_multas_automaticas()
+                    if not creadas:
+                        mostrar_aviso("Todas las devoluciones tardías ya tienen su multa generada.")
+                    else:
+                        filas = [
+                            (c["id_multa"], c["prestamo"], c["obra"], c["ejemplar"], c["dias_retraso"], f"${c['total']}")
+                            for c in creadas
+                        ]
+                        mostrar_tabla(
+                            "Multas generadas automáticamente",
+                            ["Multa #", "Folio", "ISBN", "Ej. #", "Días", "Total"],
+                            filas,
+                        )
+                        mostrar_exito(f"Se generaron {len(creadas)} multa(s) automáticamente.")
+                except Error as e:
+                    mostrar_error(f"Error al generar multas: {e}")
                 pausar()
             elif op == 2:
                 pendientes = self.multas.listar_multas(solo_pendientes=True)
@@ -534,38 +704,27 @@ class AplicacionBiblioteca:
                     continue
 
                 self._mostrar_multas(pendientes)
-                num_multa = pedir_entero("Número de multa", minimo=1)
-                folio = pedir_entero("Folio del préstamo asociado", minimo=1)
-                try:
-                    afectados = self.multas.marcar_pagada(num_multa, folio)
-                    if afectados:
-                        mostrar_exito(f"Multa #{num_multa} marcada como 'Pagada'.")
-                    else:
-                        mostrar_aviso("No se encontró esa combinación de multa y préstamo.")
-                except Error as e:
-                    mostrar_error(f"Error al actualizar la multa: {e}")
+                while True:
+                    id_multa = pedir_entero("ID de la multa a pagar (0 para cancelar)", minimo=0)
+                    if id_multa == 0:
+                        break
+                    multa_bd = self.multas.obtener_multa(id_multa)
+                    if not multa_bd:
+                        mostrar_error("No existe ninguna multa con ese ID.")
+                        continue
+                    if multa_bd["estado"] != "Pendiente":
+                        mostrar_aviso(f"La multa #{id_multa} ya tiene estado '{multa_bd['estado']}'.")
+                        continue
+                    try:
+                        self.multas.marcar_pagada(id_multa)
+                        mostrar_exito(f"Multa #{id_multa} (${multa_bd['total']}) marcada como 'Pagada'.")
+                    except Error as e:
+                        mostrar_error(f"Error al actualizar la multa: {e}")
+                    break
                 pausar()
             elif op == 3:
                 self._mostrar_multas(self.multas.listar_multas())
                 pausar()
-
-    def _crear_multa_directa(self, folio, dias_retraso):
-        monto_dia = pedir_decimal("Monto por día de retraso ($)", minimo=Decimal("0.01"))
-        estado = "Pagada" if confirmar("¿El usuario liquida la multa ahora mismo?") else "Pendiente"
-        try:
-            multa = Multa(
-                prestamo=folio,
-                monto_dia=monto_dia,
-                dias_retraso=dias_retraso,
-                estado=estado,
-            )
-            num_multa = self.multas.registrar_multa(multa)
-            mostrar_exito(
-                f"Multa #{num_multa} registrada | {dias_retraso} día(s) x ${monto_dia} = "
-                f"${multa.total} [{estado}]."
-            )
-        except (ValueError, Error) as e:
-            mostrar_error(f"No se pudo registrar la multa: {e}")
 
     # ==========================================================
     # CATÁLOGOS AUXILIARES
@@ -574,18 +733,17 @@ class AplicacionBiblioteca:
         while True:
             limpiar_pantalla()
             mostrar_titulo("CATÁLOGOS AUXILIARES")
-            consola.print(
-                "[bold]1.[/bold] Países\n"
-                "[bold]2.[/bold] Tipos de obra\n"
-                "[bold]3.[/bold] Categorías / Géneros\n"
-                "[bold]4.[/bold] Autores\n"
-                "[bold]5.[/bold] Editoriales\n"
-                "[bold]6.[/bold] Proveedores y teléfonos\n"
-                "[bold]7.[/bold] Localizaciones (Sección / Pasillo / Estante)\n"
-                "[bold]8.[/bold] Usuarios y teléfonos\n"
-                "[bold]9.[/bold] Empleados\n"
-                "[bold]0.[/bold] Volver al menú principal\n"
-            )
+            print("1. Países")
+            print("2. Tipos de obra")
+            print("3. Categorías / Géneros")
+            print("4. Autores")
+            print("5. Editoriales")
+            print("6. Proveedores y teléfonos")
+            print("7. Localizaciones (Sección / Pasillo / Estante)")
+            print("8. Usuarios y teléfonos")
+            print("9. Empleados")
+            print("0. Volver al menú principal\n")
+
             op = pedir_entero("Selecciona un catálogo", minimo=0, maximo=9)
 
             if op == 0:
@@ -678,7 +836,14 @@ class AplicacionBiblioteca:
             self._mostrar_paises(paises)
             try:
                 nombre = pedir_texto("Nombre de la editorial", max_len=50)
-                clave_pais = pedir_texto("Clave del país", max_len=5)
+                while True:
+                    clave_pais = pedir_texto("Clave del país (0 para cancelar)", max_len=5).upper()
+                    if clave_pais == "0":
+                        return
+                    if not self.catalogos.existe_pais(clave_pais):
+                        mostrar_error("Esa clave de país no existe.")
+                        continue
+                    break
                 nuevo_id = self.catalogos.crear_editorial(Editorial(nombre, clave_pais))
                 mostrar_exito(f"Editorial registrada con ID #{nuevo_id}.")
             except (ValueError, Error) as e:
@@ -689,26 +854,31 @@ class AplicacionBiblioteca:
         limpiar_pantalla()
         mostrar_titulo("CATÁLOGO DE PROVEEDORES")
         self._mostrar_proveedores(self.catalogos.listar_proveedores())
-        consola.print(
-            "[bold]1.[/bold] Registrar nuevo proveedor\n"
-            "[bold]2.[/bold] Agregar teléfono a proveedor existente\n"
-            "[bold]0.[/bold] Volver\n"
-        )
+        print("1. Registrar nuevo proveedor")
+        print("2. Agregar teléfono a proveedor existente")
+        print("0. Volver\n")
         op = pedir_entero("Opción", minimo=0, maximo=2)
         if op == 1:
             try:
                 rfc = pedir_texto("RFC del proveedor (máx. 13)", max_len=13)
                 empresa = pedir_texto("Nombre de la empresa", max_len=50)
-                telefonos = []
-                while confirmar("¿Agregar un teléfono para este proveedor?"):
-                    telefonos.append(pedir_texto("Teléfono (máx. 20)", max_len=20))
+                telefonos = [pedir_texto("Teléfono principal (obligatorio, máx. 20)", max_len=20)]
+                while confirmar("¿Deseas agregar OTRO teléfono para este proveedor?"):
+                    telefonos.append(pedir_texto("Teléfono adicional (máx. 20)", max_len=20))
                 self.catalogos.crear_proveedor(Proveedor(rfc, empresa, telefonos))
                 mostrar_exito("Proveedor registrado.")
             except (ValueError, Error) as e:
                 mostrar_error(f"Error: {e}")
         elif op == 2:
             try:
-                rfc = pedir_texto("RFC del proveedor", max_len=13)
+                while True:
+                    rfc = pedir_texto("RFC del proveedor (0 para cancelar)", max_len=13).upper()
+                    if rfc == "0":
+                        return
+                    if not self.catalogos.existe_proveedor(rfc):
+                        mostrar_error("No existe ningún proveedor con ese RFC.")
+                        continue
+                    break
                 tel = pedir_texto("Nuevo teléfono (máx. 20)", max_len=20)
                 self.catalogos.agregar_telefono_proveedor(rfc, tel)
                 mostrar_exito("Teléfono agregado al proveedor.")
@@ -737,11 +907,9 @@ class AplicacionBiblioteca:
         limpiar_pantalla()
         mostrar_titulo("CATÁLOGO DE USUARIOS")
         self._mostrar_usuarios(self.catalogos.listar_usuarios())
-        consola.print(
-            "[bold]1.[/bold] Registrar nuevo usuario\n"
-            "[bold]2.[/bold] Agregar teléfono a usuario existente\n"
-            "[bold]0.[/bold] Volver\n"
-        )
+        print("1. Registrar nuevo usuario")
+        print("2. Agregar teléfono a usuario existente")
+        print("0. Volver\n")
         op = pedir_entero("Opción", minimo=0, maximo=2)
         if op == 1:
             try:
@@ -751,9 +919,9 @@ class AplicacionBiblioteca:
                 calle = pedir_texto("Calle (máx. 30)", max_len=30)
                 numero = pedir_texto("Número exterior/interior (máx. 10)", max_len=10)
                 colonia = pedir_texto("Colonia (máx. 50)", max_len=50)
-                telefonos = []
-                while confirmar("¿Agregar un teléfono para este usuario?"):
-                    telefonos.append(pedir_texto("Teléfono (máx. 20)", max_len=20))
+                telefonos = [pedir_texto("Teléfono principal (obligatorio, máx. 20)", max_len=20)]
+                while confirmar("¿Deseas agregar OTRO teléfono para este usuario?"):
+                    telefonos.append(pedir_texto("Teléfono adicional (máx. 20)", max_len=20))
 
                 usr = Usuario(
                     nombre_pila=nombre,
@@ -770,7 +938,14 @@ class AplicacionBiblioteca:
                 mostrar_error(f"Error: {e}")
         elif op == 2:
             try:
-                id_usr = pedir_entero("ID del usuario", minimo=1)
+                while True:
+                    id_usr = pedir_entero("ID del usuario (0 para cancelar)", minimo=0)
+                    if id_usr == 0:
+                        return
+                    if not self.catalogos.existe_usuario(id_usr):
+                        mostrar_error("No existe ningún usuario con ese ID.")
+                        continue
+                    break
                 tel = pedir_texto("Nuevo teléfono (máx. 20)", max_len=20)
                 self.catalogos.agregar_telefono_usuario(id_usr, tel)
                 mostrar_exito("Teléfono agregado al usuario.")
@@ -813,22 +988,23 @@ class AplicacionBiblioteca:
         while True:
             limpiar_pantalla()
             mostrar_titulo("LISTADOS RÁPIDOS DE APOYO")
-            consola.print(
-                "[bold]1.[/bold] Obras registradas\n"
-                "[bold]2.[/bold] Ejemplares disponibles para préstamo\n"
-                "[bold]3.[/bold] Préstamos activos (pendientes de devolución)\n"
-                "[bold]4.[/bold] Multas registradas\n"
-                "[bold]0.[/bold] Volver\n"
-            )
+            print("1. Obras registradas")
+            print("2. Ejemplares disponibles para préstamo (resumen por obra)")
+            print("3. Préstamos activos (detalle de ejemplares prestados)")
+            print("4. Multas registradas")
+            print("0. Volver\n")
+
             op = pedir_entero("Opción", minimo=0, maximo=4)
             if op == 0:
                 break
             elif op == 1:
                 self._mostrar_obras(self.obras.listar_obras())
             elif op == 2:
-                self._mostrar_disponibles(self.prestamos.listar_ejemplares_disponibles())
+                self._mostrar_resumen_disponibles(self.prestamos.listar_resumen_disponibles())
             elif op == 3:
-                self._mostrar_prestamos_activos(self.prestamos.listar_prestamos_activos())
+                self._mostrar_prestamos_activos_detalle(
+                    self.prestamos.listar_prestamos_activos_detalle()
+                )
             elif op == 4:
                 self._mostrar_multas(self.multas.listar_multas())
             pausar()
@@ -883,36 +1059,66 @@ class AplicacionBiblioteca:
         ]
         mostrar_tabla("Obras", ["ISBN", "Título", "Año", "Tipo", "Categoría", "Ejemplares"], filas)
 
-    def _mostrar_disponibles(self, datos):
-        filas = [
-            (d["obra"], d["titulo"], d["ejemplar"], f"{d['seccion']} (P:{d['pasillo']} E:{d['estante']})")
-            for d in datos
-        ]
-        mostrar_tabla("Ejemplares Disponibles", ["ISBN", "Título", "Ejemplar #", "Ubicación"], filas)
+    def _mostrar_resumen_disponibles(self, datos):
+        filas = [(d["isbn"], d["titulo"], d["disponibles"]) for d in datos]
+        mostrar_tabla(
+            "Obras con Ejemplares Disponibles",
+            ["ISBN", "Título", "Disponibles"],
+            filas,
+        )
 
-    def _mostrar_prestamos_activos(self, datos):
+    def _mostrar_prestamos_activos_resumen(self, datos):
         filas = [
             (d["folio"], d["fecha_salida"], d["fecha_limite"], d["usuario"], d["pendientes"], d["empleado"])
             for d in datos
         ]
         mostrar_tabla(
-            "Préstamos Activos",
+            "Préstamos Activos (Resumen)",
             ["Folio", "Salida", "Límite", "Usuario", "Pendientes", "Empleado"],
+            filas,
+        )
+
+    def _mostrar_prestamos_activos_detalle(self, datos):
+        filas = [
+            (
+                d["folio"],
+                d["usuario"],
+                d["fecha_salida"],
+                d["fecha_limite"],
+                d["obra"],
+                d["titulo"],
+                d["ejemplar"],
+            )
+            for d in datos
+        ]
+        mostrar_tabla(
+            "Préstamos Activos (Detalle de Ejemplares)",
+            ["Folio", "Usuario", "Salida", "Límite", "ISBN", "Título", "Ej. #"],
             filas,
         )
 
     def _mostrar_multas(self, datos):
         filas = [
-            (d["multa"], d["prestamo"], d["usuario"], d["dias_retraso"], f"${d['monto_dia']}", f"${d['total']}", d["estado"])
+            (
+                d["id_multa"],
+                d["prestamo"],
+                d["usuario"],
+                d["obra"],
+                d["ejemplar"],
+                d["dias_retraso"],
+                f"${d['monto_dia']}",
+                f"${d['total']}",
+                d["estado"],
+            )
             for d in datos
         ]
         mostrar_tabla(
             "Multas",
-            ["Multa #", "Préstamo", "Usuario", "Días", "Monto/Día", "Total", "Estado"],
+            ["Multa #", "Folio", "Usuario", "ISBN", "Ej. #", "Días", "Monto/Día", "Total", "Estado"],
             filas,
         )
 
 
 if __name__ == "__main__":
     app = AplicacionBiblioteca()
-    app.ejecutar() 
+    app.ejecutar()

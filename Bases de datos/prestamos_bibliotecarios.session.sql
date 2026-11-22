@@ -1,4 +1,12 @@
 -- Active: 1795148538331@@127.0.0.1@3306@prestamos_bibliotecarios
+SET NAMES utf8mb4;
+
+DROP DATABASE IF EXISTS prestamos_bibliotecarios;
+
+CREATE DATABASE prestamos_bibliotecarios
+CHARACTER SET utf8mb4
+COLLATE utf8mb4_general_ci;
+
 USE prestamos_bibliotecarios;
 
 CREATE TABLE autor(
@@ -112,21 +120,31 @@ CREATE TABLE prestamo_ejemplar(
     obra VARCHAR(17),
     ejemplar INT,
     prestamo INT,
-    fecha_devolucion DATE,
     PRIMARY KEY (obra, ejemplar, prestamo),
     FOREIGN KEY (obra, ejemplar) REFERENCES ejemplar(obra, ejemplar),
     FOREIGN KEY (prestamo) REFERENCES prestamo(folio)
 );
 
+CREATE TABLE devolucion(
+    id_devolucion INT PRIMARY KEY AUTO_INCREMENT,
+    fecha_devolucion DATE NOT NULL,
+    empleado INT NOT NULL,
+    obra VARCHAR(17) NOT NULL,
+    ejemplar INT NOT NULL,
+    prestamo INT NOT NULL,
+    UNIQUE (obra, ejemplar, prestamo),
+    FOREIGN KEY (empleado) REFERENCES empleado(id_empleado),
+    FOREIGN KEY (obra, ejemplar, prestamo) REFERENCES prestamo_ejemplar(obra, ejemplar, prestamo)
+);
+
 CREATE TABLE multa(
-    prestamo INT,
-    multa INT AUTO_INCREMENT,
+    id_multa INT PRIMARY KEY AUTO_INCREMENT,
+    devolucion INT NOT NULL UNIQUE,
     estado VARCHAR(15) NOT NULL,
     monto_dia DECIMAL(10,2) NOT NULL,
     dias_retraso INT NOT NULL,
     total DECIMAL(10,2) NOT NULL,
-    PRIMARY KEY (multa, prestamo),
-    FOREIGN KEY (prestamo) REFERENCES prestamo(folio)
+    FOREIGN KEY (devolucion) REFERENCES devolucion(id_devolucion)
 );
 
 CREATE TABLE telefono_usuario(
@@ -153,9 +171,7 @@ CREATE TABLE abastecimiento_obra(
     FOREIGN KEY (obra) REFERENCES obra(isbn)
 );
 
-SET NAMES utf8mb4;
-USE prestamos_bibliotecarios;
-
+-- Registros mínimos para operar el sistema
 INSERT INTO localizacion (estante, seccion, pasillo)
 VALUES (0, 'Sin asignar / Recepcion', 0);
 

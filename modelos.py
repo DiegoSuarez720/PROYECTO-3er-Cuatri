@@ -1,5 +1,6 @@
-"""Clases POO correspondientes a las entidades del Modelo Relacional (19 tablas)."""
+"""Clases POO correspondientes a las entidades del Modelo Relacional (20 tablas)."""
 
+from datetime import timedelta
 from decimal import Decimal
 
 
@@ -394,20 +395,26 @@ class Ejemplar:
 
 
 class Prestamo:
+    DIAS_PLAZO = 14
+
     def __init__(
         self,
         fecha_salida,
-        fecha_limite,
         empleado,
         usuario,
+        fecha_limite=None,
         folio=None,
         ejemplares=None,
     ):
-        if fecha_limite < fecha_salida:
-            raise ValueError("La fecha límite no puede ser anterior a la fecha de salida.")
         self.folio = folio
         self.fecha_salida = fecha_salida
-        self.fecha_limite = fecha_limite
+        self.fecha_limite = (
+            fecha_limite
+            if fecha_limite is not None
+            else fecha_salida + timedelta(days=self.DIAS_PLAZO)
+        )
+        if self.fecha_limite < self.fecha_salida:
+            raise ValueError("La fecha límite no puede ser anterior a la fecha de salida.")
         self.empleado = empleado
         self.usuario = usuario
         self.ejemplares = ejemplares or []
@@ -416,20 +423,41 @@ class Prestamo:
         return f"Folio #{self.folio} | Usuario {self.usuario} | Límite: {self.fecha_limite}"
 
 
+class Devolucion:
+    def __init__(
+        self,
+        fecha_devolucion,
+        empleado,
+        obra,
+        ejemplar,
+        prestamo,
+        id_devolucion=None,
+    ):
+        self.id_devolucion = id_devolucion
+        self.fecha_devolucion = fecha_devolucion
+        self.empleado = empleado
+        self.obra = obra
+        self.ejemplar = ejemplar
+        self.prestamo = prestamo
+
+    def __str__(self):
+        return f"Devolución #{self.id_devolucion} | Préstamo #{self.prestamo} | {self.obra} (Ej. #{self.ejemplar})"
+
+
 class Multa:
     def __init__(
         self,
-        prestamo,
+        devolucion,
         monto_dia,
         dias_retraso,
         estado="Pendiente",
-        multa=None,
+        id_multa=None,
         total=None,
     ):
         if dias_retraso <= 0:
             raise ValueError("Los días de retraso deben ser mayores a 0.")
-        self.multa = multa
-        self.prestamo = prestamo
+        self.id_multa = id_multa
+        self.devolucion = devolucion
         self.estado = estado
         self.monto_dia = Decimal(str(monto_dia)).quantize(Decimal("0.01"))
         self.dias_retraso = dias_retraso
@@ -447,4 +475,4 @@ class Multa:
         self._estado = _validar_texto(valor, "estado", 15)
 
     def __str__(self):
-        return f"Multa #{self.multa} (Préstamo {self.prestamo}) | {self.dias_retraso} días | Total: ${self.total} [{self.estado}]"
+        return f"Multa #{self.id_multa} (Devolución #{self.devolucion}) | {self.dias_retraso} días | Total: ${self.total} [{self.estado}]"

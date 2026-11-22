@@ -1,14 +1,7 @@
 """Módulo de conexión Singleton a MySQL (XAMPP) para prestamos_bibliotecarios."""
 
-import os
 import mysql.connector
 from mysql.connector import Error
-
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
 
 
 class ConexionDB:
@@ -29,11 +22,11 @@ class ConexionDB:
 
         try:
             self._conexion = mysql.connector.connect(
-                host=os.getenv("DB_HOST", "localhost"),
-                port=int(os.getenv("DB_PORT", "3306")),
-                user=os.getenv("DB_USER", "root"),
-                password=os.getenv("DB_PASSWORD", ""),
-                database=os.getenv("DB_NAME", "prestamos_bibliotecarios"),
+                host="localhost",
+                port=3306,
+                user="root",
+                password="",
+                database="prestamos_bibliotecarios",
                 charset="utf8mb4",
                 collation="utf8mb4_general_ci",
                 autocommit=False,
