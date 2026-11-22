@@ -177,3 +177,7 @@ VALUES (0, 'Sin asignar / Recepcion', 0);
 
 INSERT INTO empleado (nombre_pila, primer_ap, segundo_ap, nombre_user, `contraseña`)
 VALUES ('Administrador', 'Sistema', NULL, 'admin', 'admin123');
+
+ALTER TABLE multa DROP PRIMARY KEY,
+ CHANGE id_multa multa INT AUTO_INCREMENT
+ , ADD PRIMARY KEY (multa, devolucion);
