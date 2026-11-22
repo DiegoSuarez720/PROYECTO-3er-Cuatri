@@ -26,9 +26,11 @@ from operaciones import (
     TARIFA_MULTA_DIA,
 )
 from utilidades import (
+    OperacionCancelada,
     confirmar,
     limpiar_pantalla,
     mostrar_aviso,
+    mostrar_ayuda_cancelar,
     mostrar_error,
     mostrar_exito,
     mostrar_tabla,
@@ -78,11 +80,15 @@ class AplicacionBiblioteca:
                 "SISTEMA DE PRÉSTAMOS BIBLIOTECARIOS",
                 "Inicio de sesión de empleados (escribe 'salir' en usuario para terminar)",
             )
-            usuario = pedir_texto("Usuario", max_len=30)
-            if usuario.lower() == "salir":
+            usuario = pedir_texto("Usuario", max_len=30, permitir_cancelar=False)
+            if usuario.lower() in ("salir", "cancelar"):
                 return False
 
-            contrasena = pedir_texto("Contraseña", max_len=50)
+            try:
+                contrasena = pedir_texto("Contraseña (o escribe 'cancelar' para cambiar usuario)", max_len=50)
+            except OperacionCancelada:
+                continue
+
             try:
                 empleado = self.auth.iniciar_sesion(usuario, contrasena)
             except Error as e:
@@ -118,7 +124,7 @@ class AplicacionBiblioteca:
             print("7. Listados rápidos de apoyo")
             print("0. Cerrar sesión\n")
 
-            opcion = pedir_entero("Selecciona una opción", minimo=0, maximo=7)
+            opcion = pedir_entero("Selecciona una opción", minimo=0, maximo=7, permitir_cancelar=False)
 
             if opcion == 1:
                 self.flujo_registro_obra()
@@ -151,7 +157,7 @@ class AplicacionBiblioteca:
         print("2. Abastecer más ejemplares a una obra ya registrada")
         print("0. Volver\n")
 
-        op = pedir_entero("Opción", minimo=0, maximo=2)
+        op = pedir_entero("Opción", minimo=0, maximo=2, permitir_cancelar=False)
         if op == 0:
             return
         if op == 2:
@@ -188,13 +194,12 @@ class AplicacionBiblioteca:
             pausar()
             return
 
+        mostrar_ayuda_cancelar()
         try:
             while True:
-                isbn = pedir_texto("ISBN (máx. 17 caracteres, escribe 0 para cancelar)", max_len=17)
+                isbn = pedir_texto("ISBN (máx. 17 caracteres)", max_len=17)
                 if isbn == "0":
-                    mostrar_aviso("Operación cancelada.")
-                    pausar()
-                    return
+                    raise OperacionCancelada()
                 if self.obras.existe_obra(isbn):
                     mostrar_aviso("Ese ISBN ya existe. Usa otro ISBN o elige la opción 2 para abastecer.")
                     continue
@@ -209,7 +214,7 @@ class AplicacionBiblioteca:
             while True:
                 id_tipo = pedir_entero("ID del tipo de obra (0 para cancelar)", minimo=0)
                 if id_tipo == 0:
-                    return
+                    raise OperacionCancelada()
                 if not self.catalogos.existe_tipo(id_tipo):
                     mostrar_error("Ese ID de tipo de obra no existe.")
                     continue
@@ -217,21 +222,20 @@ class AplicacionBiblioteca:
 
             self._mostrar_categorias(categorias)
             while True:
-                cod_categoria = pedir_texto("Código de categoría (0 para cancelar)", max_len=5).upper()
+                cod_categoria = pedir_texto("Código de categoría", max_len=5).upper()
                 if cod_categoria == "0":
-                    return
+                    raise OperacionCancelada()
                 if not self.catalogos.existe_categoria(cod_categoria):
                     mostrar_error("Ese código de categoría no existe.")
                     continue
                 break
 
-            # Selección de autores (1 o más, con validación inmediata)
             self._mostrar_autores(autores)
             ids_autores = []
             while True:
                 id_autor = pedir_entero("ID del autor a asociar (0 para cancelar)", minimo=0)
                 if id_autor == 0:
-                    return
+                    raise OperacionCancelada()
                 if not self.catalogos.existe_autor(id_autor):
                     mostrar_error("Ese ID de autor no existe.")
                     continue
@@ -242,13 +246,12 @@ class AplicacionBiblioteca:
                 if not confirmar("¿Deseas agregar OTRO autor a esta obra?"):
                     break
 
-            # Selección de editoriales (1 o más, con validación inmediata)
             self._mostrar_editoriales(editoriales)
             ids_editoriales = []
             while True:
                 id_ed = pedir_entero("ID de la editorial a asociar (0 para cancelar)", minimo=0)
                 if id_ed == 0:
-                    return
+                    raise OperacionCancelada()
                 if not self.catalogos.existe_editorial(id_ed):
                     mostrar_error("Ese ID de editorial no existe.")
                     continue
@@ -259,12 +262,11 @@ class AplicacionBiblioteca:
                 if not confirmar("¿Deseas agregar OTRA editorial a esta obra?"):
                     break
 
-            # Abastecimiento
             self._mostrar_proveedores(proveedores)
             while True:
-                rfc_prov = pedir_texto("RFC del proveedor (0 para cancelar)", max_len=13).upper()
+                rfc_prov = pedir_texto("RFC del proveedor", max_len=13).upper()
                 if rfc_prov == "0":
-                    return
+                    raise OperacionCancelada()
                 if not self.catalogos.existe_proveedor(rfc_prov):
                     mostrar_error("Ese RFC de proveedor no existe.")
                     continue
@@ -305,6 +307,8 @@ class AplicacionBiblioteca:
                 f"Obra '{obra.titulo}' registrada con éxito. "
                 f"Se generaron los ejemplares #{inicio} al #{fin}."
             )
+        except OperacionCancelada:
+            mostrar_aviso("Operación cancelada. Regresando al menú...")
         except (ValueError, Error) as e:
             mostrar_error(f"No se pudo registrar la obra: {e}")
 
@@ -318,48 +322,51 @@ class AplicacionBiblioteca:
             pausar()
             return
 
-        self._mostrar_obras(obras)
-        while True:
-            isbn = pedir_texto("ISBN de la obra a abastecer (0 para cancelar)", max_len=17)
-            if isbn == "0":
-                return
-            if not self.obras.existe_obra(isbn):
-                mostrar_error("No se encontró ninguna obra con ese ISBN.")
-                continue
-            break
-
-        self._mostrar_proveedores(proveedores)
-        while True:
-            rfc_prov = pedir_texto("RFC del proveedor (0 para cancelar)", max_len=13).upper()
-            if rfc_prov == "0":
-                return
-            if not self.catalogos.existe_proveedor(rfc_prov):
-                mostrar_error("Ese RFC de proveedor no existe.")
-                continue
-            break
-
-        fecha_adq = pedir_fecha("Fecha de adquisición")
-        cantidad = pedir_entero("Cantidad de nuevos ejemplares", minimo=1)
-
-        id_loc = None
-        if confirmar("¿Asignar una localización específica a estos ejemplares?"):
-            locs = self.catalogos.listar_localizaciones()
-            self._mostrar_localizaciones(locs)
+        mostrar_ayuda_cancelar()
+        try:
+            self._mostrar_obras(obras)
             while True:
-                id_loc = pedir_entero("ID de localización (0 para Sin asignar)", minimo=0)
-                if id_loc == 0:
-                    id_loc = None
-                    break
-                if not self.catalogos.existe_localizacion(id_loc):
-                    mostrar_error("Ese ID de localización no existe.")
+                isbn = pedir_texto("ISBN de la obra a abastecer", max_len=17)
+                if isbn == "0":
+                    raise OperacionCancelada()
+                if not self.obras.existe_obra(isbn):
+                    mostrar_error("No se encontró ninguna obra con ese ISBN.")
                     continue
                 break
 
-        try:
+            self._mostrar_proveedores(proveedores)
+            while True:
+                rfc_prov = pedir_texto("RFC del proveedor", max_len=13).upper()
+                if rfc_prov == "0":
+                    raise OperacionCancelada()
+                if not self.catalogos.existe_proveedor(rfc_prov):
+                    mostrar_error("Ese RFC de proveedor no existe.")
+                    continue
+                break
+
+            fecha_adq = pedir_fecha("Fecha de adquisición")
+            cantidad = pedir_entero("Cantidad de nuevos ejemplares", minimo=1)
+
+            id_loc = None
+            if confirmar("¿Asignar una localización específica a estos ejemplares?"):
+                locs = self.catalogos.listar_localizaciones()
+                self._mostrar_localizaciones(locs)
+                while True:
+                    id_loc = pedir_entero("ID de localización (0 para Sin asignar)", minimo=0)
+                    if id_loc == 0:
+                        id_loc = None
+                        break
+                    if not self.catalogos.existe_localizacion(id_loc):
+                        mostrar_error("Ese ID de localización no existe.")
+                        continue
+                    break
+
             inicio, fin = self.obras.abastecer_obra_existente(
                 isbn, rfc_prov, fecha_adq, cantidad, id_localizacion=id_loc
             )
             mostrar_exito(f"Abastecimiento guardado. Nuevos ejemplares generados: #{inicio} al #{fin}.")
+        except OperacionCancelada:
+            mostrar_aviso("Operación cancelada. Regresando al menú...")
         except (ValueError, Error) as e:
             mostrar_error(f"No se pudo registrar el abastecimiento: {e}")
 
@@ -383,38 +390,39 @@ class AplicacionBiblioteca:
             pausar()
             return
 
-        self._mostrar_obras(obras)
-        while True:
-            isbn = pedir_texto("ISBN de la obra (0 para cancelar)", max_len=17)
-            if isbn == "0":
-                return
-            ejemplares = self.obras.listar_ejemplares_obra(isbn)
-            if not ejemplares:
-                mostrar_error("Esa obra no existe o no tiene ejemplares registrados.")
-                continue
-            break
-
-        filas = [
-            (e["ejemplar"], e["localizacion"], e["seccion"], e["pasillo"], e["estante"], e["estado"])
-            for e in ejemplares
-        ]
-        mostrar_tabla(
-            f"Ejemplares de {isbn}",
-            ["Ejemplar #", "ID Loc.", "Sección", "Pasillo", "Estante", "Estado"],
-            filas,
-        )
-
-        self._mostrar_localizaciones(locs)
-        while True:
-            id_loc = pedir_entero("Nuevo ID de localización (0 para cancelar)", minimo=0)
-            if id_loc == 0:
-                return
-            if not self.catalogos.existe_localizacion(id_loc):
-                mostrar_error("Ese ID de localización no existe.")
-                continue
-            break
-
+        mostrar_ayuda_cancelar()
         try:
+            self._mostrar_obras(obras)
+            while True:
+                isbn = pedir_texto("ISBN de la obra", max_len=17)
+                if isbn == "0":
+                    raise OperacionCancelada()
+                ejemplares = self.obras.listar_ejemplares_obra(isbn)
+                if not ejemplares:
+                    mostrar_error("Esa obra no existe o no tiene ejemplares registrados.")
+                    continue
+                break
+
+            filas = [
+                (e["ejemplar"], e["localizacion"], e["seccion"], e["pasillo"], e["estante"], e["estado"])
+                for e in ejemplares
+            ]
+            mostrar_tabla(
+                f"Ejemplares de {isbn}",
+                ["Ejemplar #", "ID Loc.", "Sección", "Pasillo", "Estante", "Estado"],
+                filas,
+            )
+
+            self._mostrar_localizaciones(locs)
+            while True:
+                id_loc = pedir_entero("Nuevo ID de localización (0 para cancelar)", minimo=0)
+                if id_loc == 0:
+                    raise OperacionCancelada()
+                if not self.catalogos.existe_localizacion(id_loc):
+                    mostrar_error("Ese ID de localización no existe.")
+                    continue
+                break
+
             if confirmar("¿Aplicar esta localización a TODOS los ejemplares de esta obra?"):
                 afectados = self.obras.asignar_localizacion_todos(isbn, id_loc)
                 mostrar_exito(f"Se actualizaron {afectados} ejemplares a la localización #{id_loc}.")
@@ -423,13 +431,15 @@ class AplicacionBiblioteca:
                 while True:
                     num_ej = pedir_entero("Número de ejemplar específico (0 para cancelar)", minimo=0)
                     if num_ej == 0:
-                        return
+                        raise OperacionCancelada()
                     if num_ej not in numeros_validos:
                         mostrar_error(f"Ese ejemplar no existe. Disponibles en esta obra: {numeros_validos}")
                         continue
                     break
                 self.obras.asignar_localizacion_ejemplar(isbn, num_ej, id_loc)
                 mostrar_exito(f"Ejemplar #{num_ej} actualizado a la localización #{id_loc}.")
+        except OperacionCancelada:
+            mostrar_aviso("Operación cancelada. Regresando al menú...")
         except Error as e:
             mostrar_error(f"Error al actualizar localización: {e}")
 
@@ -456,91 +466,88 @@ class AplicacionBiblioteca:
             pausar()
             return
 
-        # 1. Seleccionar y validar usuario INMEDIATAMENTE
-        self._mostrar_usuarios(usuarios)
-        while True:
-            id_usuario = pedir_entero("ID del usuario (0 para cancelar)", minimo=0)
-            if id_usuario == 0:
-                mostrar_aviso("Préstamo cancelado.")
-                pausar()
-                return
-            if not self.catalogos.existe_usuario(id_usuario):
-                mostrar_error("No existe ningún usuario con ese ID. Intenta de nuevo.")
-                continue
-            break
-
-        # 2. Fecha de salida y cálculo automático de fecha límite (+14 días)
-        fecha_salida = pedir_fecha("Fecha de salida del préstamo")
-        fecha_limite = fecha_salida + timedelta(days=Prestamo.DIAS_PLAZO)
-        print(f"Fecha límite calculada automáticamente (+14 días): {fecha_limite}")
-
-        # 3. Mostrar resumen de obras con cantidad de ejemplares DISPONIBLES
-        self._mostrar_resumen_disponibles(resumen_disp)
-
-        # 4. Selección guiada paso a paso: ISBN -> números disponibles -> ejemplar
-        seleccionados = []
-        while True:
-            isbn = pedir_texto(
-                "ISBN de la obra a prestar (escribe 0 para terminar/cancelar)",
-                max_len=17,
-            )
-            if isbn == "0":
+        mostrar_ayuda_cancelar()
+        try:
+            self._mostrar_usuarios(usuarios)
+            while True:
+                id_usuario = pedir_entero("ID del usuario (0 para cancelar)", minimo=0)
+                if id_usuario == 0:
+                    raise OperacionCancelada()
+                if not self.catalogos.existe_usuario(id_usuario):
+                    mostrar_error("No existe ningún usuario con ese ID. Intenta de nuevo.")
+                    continue
                 break
 
-            if not self.obras.existe_obra(isbn):
-                mostrar_error("Ese ISBN no existe en el catálogo. Intenta con otro.")
-                continue
+            fecha_salida = pedir_fecha("Fecha de salida del préstamo")
+            fecha_limite = fecha_salida + timedelta(days=Prestamo.DIAS_PLAZO)
+            print(f"Fecha límite calculada automáticamente (+14 días): {fecha_limite}")
 
-            copias_bd = self.prestamos.obtener_ejemplares_disponibles_por_isbn(isbn)
-            copias_libres = [
-                c for c in copias_bd if (isbn, c["ejemplar"]) not in seleccionados
-            ]
+            self._mostrar_resumen_disponibles(resumen_disp)
 
-            if not copias_libres:
-                mostrar_aviso(
-                    "Esta obra ya no tiene ejemplares disponibles (están prestados o ya los agregaste)."
-                )
-                continue
-
-            numeros_libres = [c["ejemplar"] for c in copias_libres]
-            titulo_obra = copias_libres[0]["titulo"]
-            lista_txt = ", ".join(f"#{n}" for n in numeros_libres)
-            print(f"\nObra: {titulo_obra}")
-            print(f"Ejemplares disponibles para prestar: {lista_txt}")
-
+            seleccionados = []
             while True:
-                num_ej = pedir_entero(
-                    "Número de ejemplar a prestar (0 para elegir otro ISBN)",
-                    minimo=0,
-                )
-                if num_ej == 0:
+                if seleccionados:
+                    etiqueta_isbn = "ISBN de otra obra (0 para guardar préstamo, 'cancelar' para anular)"
+                else:
+                    etiqueta_isbn = "ISBN de la obra a prestar ('cancelar' para regresar)"
+
+                isbn = pedir_texto(etiqueta_isbn, max_len=17)
+                if isbn == "0":
                     break
-                if num_ej not in numeros_libres:
-                    mostrar_error(
-                        f"El ejemplar #{num_ej} no existe o no está disponible. "
-                        f"Opciones válidas: {lista_txt}"
-                    )
-                    if confirmar("¿Deseas ingresar otro ISBN o cancelar este paso?"):
-                        break
+
+                if not self.obras.existe_obra(isbn):
+                    mostrar_error("Ese ISBN no existe en el catálogo. Intenta con otro.")
                     continue
 
-                seleccionados.append((isbn, num_ej))
-                mostrar_exito(f"Agregado al préstamo: {titulo_obra} ({isbn}) - Ejemplar #{num_ej}")
-                break
+                copias_bd = self.prestamos.obtener_ejemplares_disponibles_por_isbn(isbn)
+                copias_libres = [
+                    c for c in copias_bd if (isbn, c["ejemplar"]) not in seleccionados
+                ]
 
-            if seleccionados:
-                if not confirmar("¿Deseas agregar OTRO ejemplar a este mismo préstamo?"):
+                if not copias_libres:
+                    mostrar_aviso(
+                        "Esta obra ya no tiene ejemplares disponibles (están prestados o ya los agregaste)."
+                    )
+                    continue
+
+                numeros_libres = [c["ejemplar"] for c in copias_libres]
+                titulo_obra = copias_libres[0]["titulo"]
+                lista_txt = ", ".join(f"#{n}" for n in numeros_libres)
+                print(f"\nObra: {titulo_obra}")
+                print(f"Ejemplares disponibles para prestar: {lista_txt}")
+
+                while True:
+                    num_ej = pedir_entero(
+                        "Número de ejemplar a prestar (0 para elegir otro ISBN)",
+                        minimo=0,
+                    )
+                    if num_ej == 0:
+                        break
+                    if num_ej not in numeros_libres:
+                        mostrar_error(
+                            f"El ejemplar #{num_ej} no existe o no está disponible. "
+                            f"Opciones válidas: {lista_txt}"
+                        )
+                        if confirmar("¿Deseas elegir otro ISBN?"):
+                            break
+                        continue
+
+                    seleccionados.append((isbn, num_ej))
+                    mostrar_exito(f"Agregado al préstamo: {titulo_obra} ({isbn}) - Ejemplar #{num_ej}")
                     break
-            else:
-                if not confirmar("Aún no agregas ejemplares. ¿Deseas intentar con otro ISBN?"):
-                    break
 
-        if not seleccionados:
-            mostrar_aviso("Préstamo cancelado (no se seleccionaron ejemplares).")
-            pausar()
-            return
+                if seleccionados:
+                    if not confirmar("¿Deseas agregar OTRO ejemplar a este mismo préstamo?"):
+                        break
+                else:
+                    if not confirmar("Aún no agregas ejemplares. ¿Deseas intentar con otro ISBN?"):
+                        break
 
-        try:
+            if not seleccionados:
+                mostrar_aviso("Préstamo cancelado (no se seleccionaron ejemplares).")
+                pausar()
+                return
+
             prestamo = Prestamo(
                 fecha_salida=fecha_salida,
                 fecha_limite=fecha_limite,
@@ -553,6 +560,8 @@ class AplicacionBiblioteca:
                 f"Préstamo registrado correctamente con Folio #{folio} | "
                 f"Ejemplares: {len(seleccionados)} | Fecha límite: {fecha_limite}"
             )
+        except OperacionCancelada:
+            mostrar_aviso("Préstamo cancelado. Regresando al menú...")
         except (ValueError, Error) as e:
             mostrar_error(f"No se pudo registrar el préstamo: {e}")
 
@@ -574,69 +583,66 @@ class AplicacionBiblioteca:
             pausar()
             return
 
-        self._mostrar_prestamos_activos_resumen(activos)
-
-        # 1. Validar folio inmediatamente
-        while True:
-            folio = pedir_entero("Folio del préstamo a devolver (0 para cancelar)", minimo=0)
-            if folio == 0:
-                return
-            pendientes = self.prestamos.listar_ejemplares_pendientes_prestamo(folio)
-            if not pendientes:
-                mostrar_error("Ese folio no existe o ya no tiene ejemplares pendientes.")
-                continue
-            break
-
-        filas = [
-            (p["obra"], p["titulo"], p["ejemplar"], p["fecha_salida"], p["fecha_limite"])
-            for p in pendientes
-        ]
-        mostrar_tabla(
-            f"Ejemplares pendientes del Préstamo #{folio}",
-            ["ISBN", "Título", "Ejemplar #", "Fecha Salida", "Fecha Límite"],
-            filas,
-        )
-
-        # 2. Validar ISBN inmediatamente contra los pendientes del folio
-        isbns_pendientes = list(dict.fromkeys(p["obra"] for p in pendientes))
-        while True:
-            isbn = pedir_texto("ISBN del ejemplar devuelto (0 para cancelar)", max_len=17)
-            if isbn == "0":
-                return
-            if isbn not in isbns_pendientes:
-                mostrar_error("Ese ISBN no corresponde a ningún ejemplar pendiente de este préstamo.")
-                continue
-            break
-
-        # 3. Validar número de ejemplar inmediatamente antes de pedir la fecha
-        ejemplares_isbn = [p for p in pendientes if p["obra"] == isbn]
-        nums_validos = [p["ejemplar"] for p in ejemplares_isbn]
-        print(f"Ejemplares pendientes de '{ejemplares_isbn[0]['titulo']}': {', '.join(f'#{n}' for n in nums_validos)}")
-
-        while True:
-            num_ej = pedir_entero("Número de ejemplar devuelto (0 para cancelar)", minimo=0)
-            if num_ej == 0:
-                return
-            if num_ej not in nums_validos:
-                mostrar_error(
-                    f"El ejemplar #{num_ej} no está pendiente en este préstamo. "
-                    f"Opciones válidas: {nums_validos}"
-                )
-                continue
-            break
-
-        # 4. Validar fecha real de devolución inmediatamente contra fecha_salida
-        fecha_salida = ejemplares_isbn[0]["fecha_salida"]
-        while True:
-            fecha_dev = pedir_fecha("Fecha real de devolución")
-            if fecha_dev < fecha_salida:
-                mostrar_error(
-                    f"La fecha de devolución no puede ser anterior a la fecha de salida ({fecha_salida})."
-                )
-                continue
-            break
-
+        mostrar_ayuda_cancelar()
         try:
+            self._mostrar_prestamos_activos_resumen(activos)
+
+            while True:
+                folio = pedir_entero("Folio del préstamo a devolver (0 para cancelar)", minimo=0)
+                if folio == 0:
+                    raise OperacionCancelada()
+                pendientes = self.prestamos.listar_ejemplares_pendientes_prestamo(folio)
+                if not pendientes:
+                    mostrar_error("Ese folio no existe o ya no tiene ejemplares pendientes.")
+                    continue
+                break
+
+            filas = [
+                (p["obra"], p["titulo"], p["ejemplar"], p["fecha_salida"], p["fecha_limite"])
+                for p in pendientes
+            ]
+            mostrar_tabla(
+                f"Ejemplares pendientes del Préstamo #{folio}",
+                ["ISBN", "Título", "Ejemplar #", "Fecha Salida", "Fecha Límite"],
+                filas,
+            )
+
+            isbns_pendientes = list(dict.fromkeys(p["obra"] for p in pendientes))
+            while True:
+                isbn = pedir_texto("ISBN del ejemplar devuelto", max_len=17)
+                if isbn == "0":
+                    raise OperacionCancelada()
+                if isbn not in isbns_pendientes:
+                    mostrar_error("Ese ISBN no corresponde a ningún ejemplar pendiente de este préstamo.")
+                    continue
+                break
+
+            ejemplares_isbn = [p for p in pendientes if p["obra"] == isbn]
+            nums_validos = [p["ejemplar"] for p in ejemplares_isbn]
+            print(f"Ejemplares pendientes de '{ejemplares_isbn[0]['titulo']}': {', '.join(f'#{n}' for n in nums_validos)}")
+
+            while True:
+                num_ej = pedir_entero("Número de ejemplar devuelto (0 para cancelar)", minimo=0)
+                if num_ej == 0:
+                    raise OperacionCancelada()
+                if num_ej not in nums_validos:
+                    mostrar_error(
+                        f"El ejemplar #{num_ej} no está pendiente en este préstamo. "
+                        f"Opciones válidas: {nums_validos}"
+                    )
+                    continue
+                break
+
+            fecha_salida = ejemplares_isbn[0]["fecha_salida"]
+            while True:
+                fecha_dev = pedir_fecha("Fecha real de devolución")
+                if fecha_dev < fecha_salida:
+                    mostrar_error(
+                        f"La fecha de devolución no puede ser anterior a la fecha de salida ({fecha_salida})."
+                    )
+                    continue
+                break
+
             resultado = self.prestamos.registrar_devolucion(
                 folio, isbn, num_ej, fecha_dev, self.empleado_activo.id_empleado
             )
@@ -653,6 +659,8 @@ class AplicacionBiblioteca:
                 )
             else:
                 mostrar_exito("Devolución entregada a tiempo (sin multa).")
+        except OperacionCancelada:
+            mostrar_aviso("Operación cancelada. Regresando al menú...")
         except (ValueError, Error) as e:
             mostrar_error(f"No se pudo registrar la devolución: {e}")
 
@@ -673,7 +681,7 @@ class AplicacionBiblioteca:
             print("3. Ver historial completo de multas")
             print("0. Volver\n")
 
-            op = pedir_entero("Opción", minimo=0, maximo=3)
+            op = pedir_entero("Opción", minimo=0, maximo=3, permitir_cancelar=False)
 
             if op == 0:
                 break
@@ -704,23 +712,26 @@ class AplicacionBiblioteca:
                     continue
 
                 self._mostrar_multas(pendientes)
-                while True:
-                    id_multa = pedir_entero("ID de la multa a pagar (0 para cancelar)", minimo=0)
-                    if id_multa == 0:
-                        break
-                    multa_bd = self.multas.obtener_multa(id_multa)
-                    if not multa_bd:
-                        mostrar_error("No existe ninguna multa con ese ID.")
-                        continue
-                    if multa_bd["estado"] != "Pendiente":
-                        mostrar_aviso(f"La multa #{id_multa} ya tiene estado '{multa_bd['estado']}'.")
-                        continue
-                    try:
+                mostrar_ayuda_cancelar()
+                try:
+                    while True:
+                        id_multa = pedir_entero("ID de la multa a pagar (0 para cancelar)", minimo=0)
+                        if id_multa == 0:
+                            raise OperacionCancelada()
+                        multa_bd = self.multas.obtener_multa(id_multa)
+                        if not multa_bd:
+                            mostrar_error("No existe ninguna multa con ese ID.")
+                            continue
+                        if multa_bd["estado"] != "Pendiente":
+                            mostrar_aviso(f"La multa #{id_multa} ya tiene estado '{multa_bd['estado']}'.")
+                            continue
                         self.multas.marcar_pagada(id_multa)
                         mostrar_exito(f"Multa #{id_multa} (${multa_bd['total']}) marcada como 'Pagada'.")
-                    except Error as e:
-                        mostrar_error(f"Error al actualizar la multa: {e}")
-                    break
+                        break
+                except OperacionCancelada:
+                    mostrar_aviso("Operación cancelada. Regresando al menú...")
+                except Error as e:
+                    mostrar_error(f"Error al actualizar la multa: {e}")
                 pausar()
             elif op == 3:
                 self._mostrar_multas(self.multas.listar_multas())
@@ -744,7 +755,7 @@ class AplicacionBiblioteca:
             print("9. Empleados")
             print("0. Volver al menú principal\n")
 
-            op = pedir_entero("Selecciona un catálogo", minimo=0, maximo=9)
+            op = pedir_entero("Selecciona un catálogo", minimo=0, maximo=9, permitir_cancelar=False)
 
             if op == 0:
                 break
@@ -771,83 +782,134 @@ class AplicacionBiblioteca:
         limpiar_pantalla()
         mostrar_titulo("CATÁLOGO DE PAÍSES")
         self._mostrar_paises(self.catalogos.listar_paises())
-        if confirmar("¿Registrar un nuevo país?"):
-            try:
-                clave = pedir_texto("Clave de país (ej. MEX, ESP, USA; máx. 5)", max_len=5)
+        try:
+            if not confirmar("¿Registrar un nuevo país?"):
+                return
+            mostrar_ayuda_cancelar()
+            while True:
+                clave = pedir_texto("Clave de país (ej. MEX, ESP, USA; máx. 5)", max_len=5).upper()
+                if self.catalogos.existe_pais(clave):
+                    mostrar_error(f"Ya existe un país registrado con la clave '{clave}'.")
+                    continue
+                break
+            while True:
                 nombre = pedir_texto("Nombre del país", max_len=50)
-                self.catalogos.crear_pais(Pais(clave, nombre))
-                mostrar_exito("País registrado.")
-            except (ValueError, Error) as e:
-                mostrar_error(f"Error: {e}")
+                if self.catalogos.existe_pais_nombre(nombre):
+                    mostrar_error(f"Ya existe un país registrado con el nombre '{nombre}'.")
+                    continue
+                break
+            self.catalogos.crear_pais(Pais(clave, nombre))
+            mostrar_exito("País registrado correctamente.")
+        except OperacionCancelada:
+            mostrar_aviso("Operación cancelada. Regresando al menú...")
+        except (ValueError, Error) as e:
+            mostrar_error(f"Error: {e}")
         pausar()
 
     def _catalogo_tipos(self):
         limpiar_pantalla()
         mostrar_titulo("CATÁLOGO DE TIPOS DE OBRA")
         self._mostrar_tipos(self.catalogos.listar_tipos())
-        if confirmar("¿Registrar un nuevo tipo de obra?"):
-            try:
+        try:
+            if not confirmar("¿Registrar un nuevo tipo de obra?"):
+                return
+            mostrar_ayuda_cancelar()
+            while True:
                 nombre = pedir_texto("Tipo de obra (ej. Libro, Revista, Tesis)", max_len=50)
-                nuevo_id = self.catalogos.crear_tipo(TipoObra(nombre))
-                mostrar_exito(f"Tipo de obra registrado con ID #{nuevo_id}.")
-            except (ValueError, Error) as e:
-                mostrar_error(f"Error: {e}")
+                if self.catalogos.existe_tipo_nombre(nombre):
+                    mostrar_error(f"Ya existe un tipo de obra registrado como '{nombre}'.")
+                    continue
+                break
+            nuevo_id = self.catalogos.crear_tipo(TipoObra(nombre))
+            mostrar_exito(f"Tipo de obra registrado con ID #{nuevo_id}.")
+        except OperacionCancelada:
+            mostrar_aviso("Operación cancelada. Regresando al menú...")
+        except (ValueError, Error) as e:
+            mostrar_error(f"Error: {e}")
         pausar()
 
     def _catalogo_categorias(self):
         limpiar_pantalla()
         mostrar_titulo("CATÁLOGO DE CATEGORÍAS")
         self._mostrar_categorias(self.catalogos.listar_categorias())
-        if confirmar("¿Registrar una nueva categoría?"):
-            try:
-                codigo = pedir_texto("Código de categoría (ej. FIC, INF, HIS; máx. 5)", max_len=5)
+        try:
+            if not confirmar("¿Registrar una nueva categoría?"):
+                return
+            mostrar_ayuda_cancelar()
+            while True:
+                codigo = pedir_texto("Código de categoría (ej. FIC, INF, HIS; máx. 5)", max_len=5).upper()
+                if self.catalogos.existe_categoria(codigo):
+                    mostrar_error(f"Ya existe una categoría con el código '{codigo}'.")
+                    continue
+                break
+            while True:
                 genero = pedir_texto("Género / descripción (máx. 30)", max_len=30)
-                self.catalogos.crear_categoria(Categoria(codigo, genero))
-                mostrar_exito("Categoría registrada.")
-            except (ValueError, Error) as e:
-                mostrar_error(f"Error: {e}")
+                if self.catalogos.existe_categoria_genero(genero):
+                    mostrar_error(f"Ya existe una categoría registrada con el género '{genero}'.")
+                    continue
+                break
+            self.catalogos.crear_categoria(Categoria(codigo, genero))
+            mostrar_exito("Categoría registrada correctamente.")
+        except OperacionCancelada:
+            mostrar_aviso("Operación cancelada. Regresando al menú...")
+        except (ValueError, Error) as e:
+            mostrar_error(f"Error: {e}")
         pausar()
 
     def _catalogo_autores(self):
         limpiar_pantalla()
         mostrar_titulo("CATÁLOGO DE AUTORES")
         self._mostrar_autores(self.catalogos.listar_autores())
-        if confirmar("¿Registrar un nuevo autor?"):
-            try:
-                nombre = pedir_texto("Nombre de pila", max_len=50)
-                ap1 = pedir_texto("Primer apellido", max_len=50)
-                ap2 = pedir_texto("Segundo apellido", max_len=50, obligatorio=False)
+        try:
+            if not confirmar("¿Registrar un nuevo autor?"):
+                return
+            mostrar_ayuda_cancelar()
+            nombre = pedir_texto("Nombre de pila", max_len=50)
+            ap1 = pedir_texto("Primer apellido", max_len=50)
+            ap2 = pedir_texto("Segundo apellido", max_len=50, obligatorio=False)
+            if self.catalogos.existe_autor_nombre(nombre, ap1, ap2):
+                mostrar_error("Ya existe un autor registrado con ese mismo nombre completo.")
+            else:
                 nuevo_id = self.catalogos.crear_autor(Autor(nombre, ap1, ap2))
                 mostrar_exito(f"Autor registrado con ID #{nuevo_id}.")
-            except (ValueError, Error) as e:
-                mostrar_error(f"Error: {e}")
+        except OperacionCancelada:
+            mostrar_aviso("Operación cancelada. Regresando al menú...")
+        except (ValueError, Error) as e:
+            mostrar_error(f"Error: {e}")
         pausar()
 
     def _catalogo_editoriales(self):
         limpiar_pantalla()
         mostrar_titulo("CATÁLOGO DE EDITORIALES")
         self._mostrar_editoriales(self.catalogos.listar_editoriales())
-        if confirmar("¿Registrar una nueva editorial?"):
+        try:
+            if not confirmar("¿Registrar una nueva editorial?"):
+                return
             paises = self.catalogos.listar_paises()
             if not paises:
                 mostrar_aviso("Primero registra al menos un país.")
                 pausar()
                 return
             self._mostrar_paises(paises)
-            try:
-                nombre = pedir_texto("Nombre de la editorial", max_len=50)
-                while True:
-                    clave_pais = pedir_texto("Clave del país (0 para cancelar)", max_len=5).upper()
-                    if clave_pais == "0":
-                        return
-                    if not self.catalogos.existe_pais(clave_pais):
-                        mostrar_error("Esa clave de país no existe.")
-                        continue
-                    break
+            mostrar_ayuda_cancelar()
+            nombre = pedir_texto("Nombre de la editorial", max_len=50)
+            while True:
+                clave_pais = pedir_texto("Clave del país", max_len=5).upper()
+                if clave_pais == "0":
+                    raise OperacionCancelada()
+                if not self.catalogos.existe_pais(clave_pais):
+                    mostrar_error("Esa clave de país no existe.")
+                    continue
+                break
+            if self.catalogos.existe_editorial_nombre(nombre, clave_pais):
+                mostrar_error(f"Ya existe la editorial '{nombre}' registrada en el país '{clave_pais}'.")
+            else:
                 nuevo_id = self.catalogos.crear_editorial(Editorial(nombre, clave_pais))
                 mostrar_exito(f"Editorial registrada con ID #{nuevo_id}.")
-            except (ValueError, Error) as e:
-                mostrar_error(f"Error: {e}")
+        except OperacionCancelada:
+            mostrar_aviso("Operación cancelada. Regresando al menú...")
+        except (ValueError, Error) as e:
+            mostrar_error(f"Error: {e}")
         pausar()
 
     def _catalogo_proveedores(self):
@@ -857,50 +919,74 @@ class AplicacionBiblioteca:
         print("1. Registrar nuevo proveedor")
         print("2. Agregar teléfono a proveedor existente")
         print("0. Volver\n")
-        op = pedir_entero("Opción", minimo=0, maximo=2)
-        if op == 1:
-            try:
-                rfc = pedir_texto("RFC del proveedor (máx. 13)", max_len=13)
+        op = pedir_entero("Opción", minimo=0, maximo=2, permitir_cancelar=False)
+        if op == 0:
+            return
+
+        mostrar_ayuda_cancelar()
+        try:
+            if op == 1:
+                while True:
+                    rfc = pedir_texto("RFC del proveedor (máx. 13)", max_len=13).upper()
+                    if self.catalogos.existe_proveedor(rfc):
+                        mostrar_error(f"Ya existe un proveedor registrado con el RFC '{rfc}'.")
+                        continue
+                    break
                 empresa = pedir_texto("Nombre de la empresa", max_len=50)
                 telefonos = [pedir_texto("Teléfono principal (obligatorio, máx. 20)", max_len=20)]
                 while confirmar("¿Deseas agregar OTRO teléfono para este proveedor?"):
-                    telefonos.append(pedir_texto("Teléfono adicional (máx. 20)", max_len=20))
+                    tel = pedir_texto("Teléfono adicional (máx. 20)", max_len=20)
+                    if tel in telefonos:
+                        mostrar_aviso("Ese teléfono ya fue agregado a la lista.")
+                    else:
+                        telefonos.append(tel)
                 self.catalogos.crear_proveedor(Proveedor(rfc, empresa, telefonos))
-                mostrar_exito("Proveedor registrado.")
-            except (ValueError, Error) as e:
-                mostrar_error(f"Error: {e}")
-        elif op == 2:
-            try:
+                mostrar_exito("Proveedor registrado correctamente.")
+            elif op == 2:
                 while True:
-                    rfc = pedir_texto("RFC del proveedor (0 para cancelar)", max_len=13).upper()
+                    rfc = pedir_texto("RFC del proveedor", max_len=13).upper()
                     if rfc == "0":
-                        return
+                        raise OperacionCancelada()
                     if not self.catalogos.existe_proveedor(rfc):
                         mostrar_error("No existe ningún proveedor con ese RFC.")
                         continue
                     break
-                tel = pedir_texto("Nuevo teléfono (máx. 20)", max_len=20)
+                while True:
+                    tel = pedir_texto("Nuevo teléfono (máx. 20)", max_len=20)
+                    if self.catalogos.existe_telefono_proveedor(rfc, tel):
+                        mostrar_error("Ese teléfono ya está registrado para este proveedor.")
+                        continue
+                    break
                 self.catalogos.agregar_telefono_proveedor(rfc, tel)
                 mostrar_exito("Teléfono agregado al proveedor.")
-            except Error as e:
-                mostrar_error(f"Error: {e}")
+        except OperacionCancelada:
+            mostrar_aviso("Operación cancelada. Regresando al menú...")
+        except (ValueError, Error) as e:
+            mostrar_error(f"Error: {e}")
         pausar()
 
     def _catalogo_localizaciones(self):
         limpiar_pantalla()
         mostrar_titulo("CATÁLOGO DE LOCALIZACIONES")
         self._mostrar_localizaciones(self.catalogos.listar_localizaciones())
-        if confirmar("¿Registrar una nueva localización?"):
-            try:
-                seccion = pedir_texto("Sección (ej. Literatura, Ingeniería)", max_len=50)
-                pasillo = pedir_entero("Número de pasillo", minimo=0)
-                estante = pedir_entero("Número de estante", minimo=0)
+        try:
+            if not confirmar("¿Registrar una nueva localización?"):
+                return
+            mostrar_ayuda_cancelar()
+            seccion = pedir_texto("Sección (ej. Literatura, Ingeniería)", max_len=50)
+            pasillo = pedir_entero("Número de pasillo", minimo=0)
+            estante = pedir_entero("Número de estante", minimo=0)
+            if self.catalogos.existe_localizacion_datos(seccion, pasillo, estante):
+                mostrar_error("Ya existe una localización registrada con esa misma sección, pasillo y estante.")
+            else:
                 nuevo_id = self.catalogos.crear_localizacion(
                     Localizacion(estante, seccion, pasillo)
                 )
                 mostrar_exito(f"Localización registrada con ID #{nuevo_id}.")
-            except (ValueError, Error) as e:
-                mostrar_error(f"Error: {e}")
+        except OperacionCancelada:
+            mostrar_aviso("Operación cancelada. Regresando al menú...")
+        except (ValueError, Error) as e:
+            mostrar_error(f"Error: {e}")
         pausar()
 
     def _catalogo_usuarios(self):
@@ -910,18 +996,31 @@ class AplicacionBiblioteca:
         print("1. Registrar nuevo usuario")
         print("2. Agregar teléfono a usuario existente")
         print("0. Volver\n")
-        op = pedir_entero("Opción", minimo=0, maximo=2)
-        if op == 1:
-            try:
+        op = pedir_entero("Opción", minimo=0, maximo=2, permitir_cancelar=False)
+        if op == 0:
+            return
+
+        mostrar_ayuda_cancelar()
+        try:
+            if op == 1:
                 nombre = pedir_texto("Nombre de pila", max_len=50)
                 ap1 = pedir_texto("Primer apellido", max_len=50)
                 ap2 = pedir_texto("Segundo apellido", max_len=50, obligatorio=False)
                 calle = pedir_texto("Calle (máx. 30)", max_len=30)
                 numero = pedir_texto("Número exterior/interior (máx. 10)", max_len=10)
                 colonia = pedir_texto("Colonia (máx. 50)", max_len=50)
+                if self.catalogos.existe_usuario_datos(nombre, ap1, ap2, calle, numero, colonia):
+                    mostrar_error("Ya existe un usuario registrado con ese mismo nombre y dirección.")
+                    pausar()
+                    return
+
                 telefonos = [pedir_texto("Teléfono principal (obligatorio, máx. 20)", max_len=20)]
                 while confirmar("¿Deseas agregar OTRO teléfono para este usuario?"):
-                    telefonos.append(pedir_texto("Teléfono adicional (máx. 20)", max_len=20))
+                    tel = pedir_texto("Teléfono adicional (máx. 20)", max_len=20)
+                    if tel in telefonos:
+                        mostrar_aviso("Ese teléfono ya fue agregado a la lista.")
+                    else:
+                        telefonos.append(tel)
 
                 usr = Usuario(
                     nombre_pila=nombre,
@@ -934,23 +1033,27 @@ class AplicacionBiblioteca:
                 )
                 nuevo_id = self.catalogos.crear_usuario(usr)
                 mostrar_exito(f"Usuario registrado con ID #{nuevo_id}.")
-            except (ValueError, Error) as e:
-                mostrar_error(f"Error: {e}")
-        elif op == 2:
-            try:
+            elif op == 2:
                 while True:
                     id_usr = pedir_entero("ID del usuario (0 para cancelar)", minimo=0)
                     if id_usr == 0:
-                        return
+                        raise OperacionCancelada()
                     if not self.catalogos.existe_usuario(id_usr):
                         mostrar_error("No existe ningún usuario con ese ID.")
                         continue
                     break
-                tel = pedir_texto("Nuevo teléfono (máx. 20)", max_len=20)
+                while True:
+                    tel = pedir_texto("Nuevo teléfono (máx. 20)", max_len=20)
+                    if self.catalogos.existe_telefono_usuario(id_usr, tel):
+                        mostrar_error("Ese teléfono ya está registrado para este usuario.")
+                        continue
+                    break
                 self.catalogos.agregar_telefono_usuario(id_usr, tel)
                 mostrar_exito("Teléfono agregado al usuario.")
-            except Error as e:
-                mostrar_error(f"Error: {e}")
+        except OperacionCancelada:
+            mostrar_aviso("Operación cancelada. Regresando al menú...")
+        except (ValueError, Error) as e:
+            mostrar_error(f"Error: {e}")
         pausar()
 
     def _catalogo_empleados(self):
@@ -966,19 +1069,28 @@ class AplicacionBiblioteca:
         ]
         mostrar_tabla("Empleados", ["ID", "Nombre completo", "Usuario"], filas)
 
-        if confirmar("¿Registrar un nuevo empleado?"):
-            try:
-                nombre = pedir_texto("Nombre de pila", max_len=50)
-                ap1 = pedir_texto("Primer apellido", max_len=50)
-                ap2 = pedir_texto("Segundo apellido", max_len=50, obligatorio=False)
+        try:
+            if not confirmar("¿Registrar un nuevo empleado?"):
+                return
+            mostrar_ayuda_cancelar()
+            nombre = pedir_texto("Nombre de pila", max_len=50)
+            ap1 = pedir_texto("Primer apellido", max_len=50)
+            ap2 = pedir_texto("Segundo apellido", max_len=50, obligatorio=False)
+            while True:
                 user = pedir_texto("Nombre de usuario (único, máx. 30)", max_len=30)
-                pwd = pedir_texto("Contraseña (máx. 50)", max_len=50)
-                nuevo_id = self.catalogos.crear_empleado(
-                    Empleado(nombre, ap1, user, pwd, segundo_ap=ap2)
-                )
-                mostrar_exito(f"Empleado registrado con ID #{nuevo_id}.")
-            except (ValueError, Error) as e:
-                mostrar_error(f"Error: {e}")
+                if self.catalogos.existe_empleado_user(user):
+                    mostrar_error(f"El nombre de usuario '{user}' ya está en uso. Elige otro.")
+                    continue
+                break
+            pwd = pedir_texto("Contraseña (máx. 50)", max_len=50)
+            nuevo_id = self.catalogos.crear_empleado(
+                Empleado(nombre, ap1, user, pwd, segundo_ap=ap2)
+            )
+            mostrar_exito(f"Empleado registrado con ID #{nuevo_id}.")
+        except OperacionCancelada:
+            mostrar_aviso("Operación cancelada. Regresando al menú...")
+        except (ValueError, Error) as e:
+            mostrar_error(f"Error: {e}")
         pausar()
 
     # ==========================================================
@@ -994,7 +1106,7 @@ class AplicacionBiblioteca:
             print("4. Multas registradas")
             print("0. Volver\n")
 
-            op = pedir_entero("Opción", minimo=0, maximo=4)
+            op = pedir_entero("Opción", minimo=0, maximo=4, permitir_cancelar=False)
             if op == 0:
                 break
             elif op == 1:

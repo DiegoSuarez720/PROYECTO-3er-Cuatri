@@ -5,6 +5,13 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 
+PALABRAS_CANCELAR = ("cancelar", "salir")
+
+
+class OperacionCancelada(Exception):
+    """Se lanza cuando el usuario escribe 'cancelar' o 'salir' para regresar al menú."""
+
+
 def limpiar_pantalla():
     """Limpia la terminal según el sistema operativo."""
     os.system("cls" if os.name == "nt" else "clear")
@@ -24,6 +31,11 @@ def mostrar_titulo(titulo, subtitulo=""):
         print(f"  {subtitulo}")
     print(linea)
     print()
+
+
+def mostrar_ayuda_cancelar():
+    """Recuerda al usuario cómo cancelar en cualquier paso de un registro."""
+    print("(Escribe 'cancelar' o 'salir' en cualquier campo para regresar)\n")
 
 
 def mostrar_exito(mensaje):
@@ -71,14 +83,23 @@ def mostrar_tabla(titulo, columnas, filas):
     print()
 
 
-def pedir_texto(etiqueta, max_len=None, obligatorio=True, valor_defecto=None):
-    """Solicita una cadena validando si es obligatoria y su longitud máxima en SQL."""
+def pedir_texto(
+    etiqueta,
+    max_len=None,
+    obligatorio=True,
+    valor_defecto=None,
+    permitir_cancelar=True,
+):
+    """Solicita una cadena validando si es obligatoria, su longitud máxima y cancelación."""
     while True:
         sufijo = f" [{valor_defecto}]" if valor_defecto is not None else ""
         if not obligatorio and valor_defecto is None:
             sufijo = " (opcional, Enter para omitir)"
 
         valor = input(f"{etiqueta}{sufijo}: ").strip()
+
+        if permitir_cancelar and valor.lower() in PALABRAS_CANCELAR:
+            raise OperacionCancelada()
 
         if not valor:
             if valor_defecto is not None:
@@ -96,10 +117,14 @@ def pedir_texto(etiqueta, max_len=None, obligatorio=True, valor_defecto=None):
         return valor
 
 
-def pedir_entero(etiqueta, minimo=None, maximo=None):
+def pedir_entero(etiqueta, minimo=None, maximo=None, permitir_cancelar=True):
     """Solicita un número entero dentro de un rango opcional."""
     while True:
         texto = input(f"{etiqueta}: ").strip()
+
+        if permitir_cancelar and texto.lower() in PALABRAS_CANCELAR:
+            raise OperacionCancelada()
+
         try:
             numero = int(texto)
         except ValueError:
@@ -116,10 +141,14 @@ def pedir_entero(etiqueta, minimo=None, maximo=None):
         return numero
 
 
-def pedir_decimal(etiqueta, minimo=Decimal("0.00")):
+def pedir_decimal(etiqueta, minimo=Decimal("0.00"), permitir_cancelar=True):
     """Solicita un monto decimal exacto."""
     while True:
         texto = input(f"{etiqueta}: ").strip()
+
+        if permitir_cancelar and texto.lower() in PALABRAS_CANCELAR:
+            raise OperacionCancelada()
+
         try:
             monto = Decimal(texto)
         except InvalidOperation:
@@ -133,12 +162,15 @@ def pedir_decimal(etiqueta, minimo=Decimal("0.00")):
         return monto.quantize(Decimal("0.01"))
 
 
-def pedir_fecha(etiqueta, permitir_hoy=True):
+def pedir_fecha(etiqueta, permitir_hoy=True, permitir_cancelar=True):
     """Solicita y valida inmediatamente una fecha en formato AAAA-MM-DD."""
     hoy = date.today()
     while True:
         ayuda = f" (AAAA-MM-DD, Enter = {hoy})" if permitir_hoy else " (AAAA-MM-DD)"
         texto = input(f"{etiqueta}{ayuda}: ").strip()
+
+        if permitir_cancelar and texto.lower() in PALABRAS_CANCELAR:
+            raise OperacionCancelada()
 
         if not texto and permitir_hoy:
             return hoy
@@ -149,10 +181,14 @@ def pedir_fecha(etiqueta, permitir_hoy=True):
             mostrar_error("Formato de fecha inválido. Usa AAAA-MM-DD (ejemplo: 2026-11-21).")
 
 
-def confirmar(etiqueta):
+def confirmar(etiqueta, permitir_cancelar=True):
     """Pide confirmación Sí/No al usuario."""
     while True:
         resp = input(f"{etiqueta} (s/n): ").strip().lower()
+
+        if permitir_cancelar and resp in PALABRAS_CANCELAR:
+            raise OperacionCancelada()
+
         if resp in ("s", "si", "sí"):
             return True
         if resp in ("n", "no"):
