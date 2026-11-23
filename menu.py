@@ -35,6 +35,7 @@ from utilidades import (
     mostrar_ayuda_cancelar,
     mostrar_error,
     mostrar_exito,
+    mostrar_ficha,
     mostrar_tabla,
     mostrar_titulo,
     pausar,
@@ -45,7 +46,7 @@ from utilidades import (
 
 
 class AplicacionBiblioteca:
-    """Controla el flujo de menús en terminal para los 5 registros y catálogos."""
+    """Controla el flujo de menús en terminal para operaciones, consultas y catálogos."""
 
     def __init__(self):
         self.auth = GestorAuth()
@@ -76,7 +77,7 @@ class AplicacionBiblioteca:
     # UTILIDADES INTERNAS DE NAVEGACIÓN
     # ==========================================================
     def _confirmar_continuar(self, etiqueta):
-        """Pregunta si desea registrar otro elemento; 'atras'/'cancelar' regresan al menú."""
+        """Pregunta si desea continuar; 'atras'/'cancelar' regresan al menú."""
         try:
             return confirmar(etiqueta)
         except (OperacionCancelada, PasoAnterior):
@@ -194,14 +195,14 @@ class AplicacionBiblioteca:
         while True:
             limpiar_pantalla()
             mostrar_titulo(
-                "MENÚ PRINCIPAL - REGISTROS Y CATÁLOGOS",
+                "MENÚ PRINCIPAL - SISTEMA BIBLIOTECARIO",
                 f"Empleado en sesión: {self.empleado_activo.nombre_completo} (@{self.empleado_activo.nombre_user})",
             )
-            print("1. Registro 1: Obra completa / Abastecer ejemplares")
-            print("2. Registro 2: Asignar localización a ejemplares")
-            print("3. Registro 3: Préstamo de ejemplares")
-            print("4. Registro 4: Devolución de ejemplares")
-            print("5. Registro 5: Multas por devolución tardía")
+            print("1. Obras y abastecimiento")
+            print("2. Asignar localización a ejemplares")
+            print("3. Préstamos de ejemplares")
+            print("4. Devoluciones de ejemplares")
+            print("5. Multas por devolución tardía")
             print("6. Catálogos auxiliares (Autores, Usuarios, Proveedores, etc.)")
             print("7. Listados rápidos de apoyo")
             print("0. Cerrar sesión\n")
@@ -215,13 +216,13 @@ class AplicacionBiblioteca:
             )
 
             if opcion == 1:
-                self.flujo_registro_obra()
+                self.flujo_obras()
             elif opcion == 2:
                 self.flujo_asignar_localizacion()
             elif opcion == 3:
-                self.flujo_registrar_prestamo()
+                self.flujo_prestamos()
             elif opcion == 4:
-                self.flujo_registrar_devolucion()
+                self.flujo_devoluciones()
             elif opcion == 5:
                 self.flujo_multas()
             elif opcion == 6:
@@ -804,21 +805,22 @@ class AplicacionBiblioteca:
             return id_usuario
 
     # ==========================================================
-    # REGISTRO 1: OBRA COMPLETA / ABASTECIMIENTO
+    # OPCIÓN 1: OBRAS Y ABASTECIMIENTO (+ CONSULTA COMPLETA DE OBRA)
     # ==========================================================
-    def flujo_registro_obra(self):
+    def flujo_obras(self):
         while True:
             limpiar_pantalla()
             mostrar_titulo(
-                "REGISTRO 1: OBRA COMPLETA Y ABASTECIMIENTO",
-                "Registra una obra nueva o agrega más ejemplares a una existente",
+                "OBRAS Y ABASTECIMIENTO",
+                "Alta de obras, abastecimiento de ejemplares y consulta de ficha completa",
             )
-            print("1. Registrar obra nueva (con tipo, categoría, autores, editorial, proveedor y ejemplares)")
+            print("1. Registrar obra nueva (tipo, categoría, autores, editorial, proveedor y ejemplares)")
             print("2. Abastecer más ejemplares a una obra ya registrada")
+            print("3. Consultar información completa de una obra")
             print("0. Volver\n")
 
             op = pedir_entero(
-                "Opción", minimo=0, maximo=2, permitir_cancelar=False, permitir_atras=False
+                "Opción", minimo=0, maximo=3, permitir_cancelar=False, permitir_atras=False
             )
             if op == 0:
                 return
@@ -826,12 +828,63 @@ class AplicacionBiblioteca:
                 self._registrar_obra_nueva()
             elif op == 2:
                 self._abastecer_existente()
+            elif op == 3:
+                self._consultar_obra_completa()
+
+    def _consultar_obra_completa(self):
+        while True:
+            limpiar_pantalla()
+            mostrar_titulo("CONSULTA DE INFORMACIÓN COMPLETA DE UNA OBRA")
+
+            obras = self.obras.listar_obras()
+            if not obras:
+                mostrar_aviso("No hay obras registradas en la base de datos.")
+                pausar()
+                return
+
+            self._mostrar_obras(obras)
+            mostrar_ayuda_cancelar()
+            try:
+                while True:
+                    isbn = pedir_texto("ISBN de la obra a consultar", max_len=17)
+                    filas = self.obras.consultar_obra_completa(isbn)
+                    if not filas:
+                        mostrar_error("No se encontró ninguna obra con ese ISBN.")
+                        continue
+                    break
+
+                base = filas[0]
+                editoriales = list(dict.fromkeys(f["editorial"] for f in filas))
+                paises = list(dict.fromkeys(f["pais"] for f in filas))
+                autores = list(dict.fromkeys(f["autor"] for f in filas))
+
+                mostrar_ficha(
+                    f"FICHA COMPLETA DE OBRA ({base['isbn']})",
+                    [
+                        ("ISBN", base["isbn"]),
+                        ("Título", base["titulo"]),
+                        ("Subtítulo", base["subtitulo"]),
+                        ("Tipo de obra", base["tipo_obra"]),
+                        ("Año de publicación", base["anio_publicacion"]),
+                        ("Editorial(es)", editoriales),
+                        ("País(es)", paises),
+                        ("Autor(es)", autores),
+                    ],
+                )
+                if not self._confirmar_continuar("¿Deseas consultar OTRA obra?"):
+                    return
+            except (OperacionCancelada, PasoAnterior):
+                return
+            except Error as e:
+                mostrar_error(f"Error al consultar obra: {e}")
+                pausar()
+                return
 
     def _registrar_obra_nueva(self):
         while True:
             limpiar_pantalla()
             mostrar_titulo(
-                "REGISTRO 1: ALTA DE OBRA NUEVA",
+                "ALTA DE OBRA NUEVA",
                 "Puedes elegir datos existentes o escribir 'nuevo' para registrarlos al momento",
             )
             mostrar_ayuda_cancelar()
@@ -975,7 +1028,7 @@ class AplicacionBiblioteca:
     def _abastecer_existente(self):
         while True:
             limpiar_pantalla()
-            mostrar_titulo("REGISTRO 1: ABASTECER OBRA EXISTENTE")
+            mostrar_titulo("ABASTECER OBRA EXISTENTE")
 
             obras = self.obras.listar_obras()
             if not obras:
@@ -1058,12 +1111,12 @@ class AplicacionBiblioteca:
                     return
 
     # ==========================================================
-    # REGISTRO 2: ASIGNAR LOCALIZACIÓN A EJEMPLARES
+    # OPCIÓN 2: ASIGNAR LOCALIZACIÓN A EJEMPLARES
     # ==========================================================
     def flujo_asignar_localizacion(self):
         while True:
             limpiar_pantalla()
-            mostrar_titulo("REGISTRO 2: ASIGNAR LOCALIZACIÓN A EJEMPLARES")
+            mostrar_titulo("ASIGNAR LOCALIZACIÓN A EJEMPLARES")
 
             obras = self.obras.listar_obras()
             if not obras:
@@ -1158,13 +1211,159 @@ class AplicacionBiblioteca:
                     return
 
     # ==========================================================
-    # REGISTRO 3: PRÉSTAMO DE EJEMPLARES
+    # OPCIÓN 3: PRÉSTAMOS DE EJEMPLARES (+ DETALLE Y CONSULTA POR FECHA)
     # ==========================================================
-    def flujo_registrar_prestamo(self):
+    def flujo_prestamos(self):
         while True:
             limpiar_pantalla()
             mostrar_titulo(
-                "REGISTRO 3: PRÉSTAMO DE EJEMPLARES",
+                "PRÉSTAMOS DE EJEMPLARES",
+                "Registro de préstamos y consulta de historial por folio o fecha",
+            )
+            print("1. Registrar nuevo préstamo")
+            print("2. Consultar detalle de un préstamo (por Folio)")
+            print("3. Consultar préstamos realizados en una fecha")
+            print("0. Volver\n")
+
+            op = pedir_entero(
+                "Opción", minimo=0, maximo=3, permitir_cancelar=False, permitir_atras=False
+            )
+            if op == 0:
+                return
+            if op == 1:
+                self._registrar_prestamo()
+            elif op == 2:
+                self._consultar_detalle_prestamo()
+            elif op == 3:
+                self._consultar_prestamos_por_fecha()
+
+    def _consultar_detalle_prestamo(self):
+        while True:
+            limpiar_pantalla()
+            mostrar_titulo("DETALLE DE PRÉSTAMO POR FOLIO")
+
+            todos = self.prestamos.listar_todos_prestamos()
+            if not todos:
+                mostrar_aviso("No hay préstamos registrados en la base de datos.")
+                pausar()
+                return
+
+            filas_resumen = [
+                (
+                    p["folio"],
+                    p["fecha_salida"],
+                    p["fecha_limite"],
+                    p["usuario"],
+                    p["total_ejemplares"],
+                    p["pendientes"],
+                )
+                for p in todos
+            ]
+            mostrar_tabla(
+                "Préstamos registrados",
+                ["Folio", "Salida", "Límite", "Usuario", "Total Ej.", "Pendientes"],
+                filas_resumen,
+            )
+            mostrar_ayuda_cancelar()
+            try:
+                while True:
+                    folio = pedir_entero("Número de préstamo (Folio) a consultar", minimo=1)
+                    detalle = self.prestamos.consultar_detalle_prestamo(folio)
+                    if not detalle:
+                        mostrar_error("No existe ningún préstamo con ese folio.")
+                        continue
+                    break
+
+                cab = detalle[0]
+                mostrar_ficha(
+                    f"INFORMACIÓN DEL PRÉSTAMO #{cab['folio']}",
+                    [
+                        ("Número de préstamo", cab["folio"]),
+                        ("Fecha del préstamo", cab["fecha_salida"]),
+                        ("Fecha límite", cab["fecha_limite"]),
+                        ("Usuario", cab["usuario"]),
+                        ("Total de ejemplares", len(detalle)),
+                    ],
+                )
+
+                filas_ej = [
+                    (
+                        d["isbn"],
+                        d["titulo"],
+                        d["subtitulo"],
+                        d["ejemplar"],
+                        formatear_fecha(d["fecha_devolucion"])
+                        if d["fecha_devolucion"]
+                        else "Pendiente",
+                    )
+                    for d in detalle
+                ]
+                mostrar_tabla(
+                    f"Ejemplares incluidos en el Préstamo #{cab['folio']}",
+                    ["ISBN", "Título", "Subtítulo", "Ej. #", "Fecha Devolución"],
+                    filas_ej,
+                )
+
+                if not self._confirmar_continuar("¿Deseas consultar OTRO préstamo?"):
+                    return
+            except (OperacionCancelada, PasoAnterior):
+                return
+            except Error as e:
+                mostrar_error(f"Error al consultar préstamo: {e}")
+                pausar()
+                return
+
+    def _consultar_prestamos_por_fecha(self):
+        while True:
+            limpiar_pantalla()
+            mostrar_titulo("PRÉSTAMOS REALIZADOS EN UNA FECHA")
+            mostrar_ayuda_cancelar()
+            try:
+                fecha = pedir_fecha("Fecha de préstamo a consultar")
+                registros = self.prestamos.consultar_prestamos_por_fecha(fecha)
+                if not registros:
+                    mostrar_aviso(
+                        f"No se encontraron préstamos registrados el {formatear_fecha(fecha)}."
+                    )
+                else:
+                    filas = [
+                        (
+                            r["fecha_salida"],
+                            r["folio"],
+                            r["usuario"],
+                            r["cantidad_ejemplares"],
+                            r["fecha_limite"],
+                            r["empleado"],
+                        )
+                        for r in registros
+                    ]
+                    mostrar_tabla(
+                        f"Préstamos del {formatear_fecha(fecha)} ({len(registros)} registro(s))",
+                        [
+                            "Fecha",
+                            "Folio",
+                            "Usuario",
+                            "Cant. Ej.",
+                            "Fecha Devolución",
+                            "Empleado",
+                        ],
+                        filas,
+                    )
+
+                if not self._confirmar_continuar("¿Deseas consultar préstamos de OTRA fecha?"):
+                    return
+            except (OperacionCancelada, PasoAnterior):
+                return
+            except Error as e:
+                mostrar_error(f"Error al consultar préstamos por fecha: {e}")
+                pausar()
+                return
+
+    def _registrar_prestamo(self):
+        while True:
+            limpiar_pantalla()
+            mostrar_titulo(
+                "REGISTRAR NUEVO PRÉSTAMO",
                 "Plazo automático: 14 días | Escribe 'nuevo' en usuario para registrarlo al momento",
             )
 
@@ -1301,13 +1500,107 @@ class AplicacionBiblioteca:
             return True
 
     # ==========================================================
-    # REGISTRO 4: DEVOLUCIÓN DE EJEMPLARES (CON MULTA AUTOMÁTICA)
+    # OPCIÓN 4: DEVOLUCIONES DE EJEMPLARES (+ CONSULTA POR FECHA)
     # ==========================================================
-    def flujo_registrar_devolucion(self):
+    def flujo_devoluciones(self):
         while True:
             limpiar_pantalla()
             mostrar_titulo(
-                "REGISTRO 4: DEVOLUCIÓN DE EJEMPLARES",
+                "DEVOLUCIONES DE EJEMPLARES",
+                f"Recibe: {self.empleado_activo.nombre_completo} (multa automática si hay retraso: ${TARIFA_MULTA_DIA}/día)",
+            )
+            print("1. Registrar nueva devolución")
+            print("2. Consultar devoluciones registradas en una fecha")
+            print("0. Volver\n")
+
+            op = pedir_entero(
+                "Opción", minimo=0, maximo=2, permitir_cancelar=False, permitir_atras=False
+            )
+            if op == 0:
+                return
+            if op == 1:
+                self._registrar_devolucion()
+            elif op == 2:
+                self._consultar_devoluciones_por_fecha()
+
+    def _consultar_devoluciones_por_fecha(self):
+        while True:
+            limpiar_pantalla()
+            mostrar_titulo("DEVOLUCIONES REGISTRADAS EN UNA FECHA")
+            mostrar_ayuda_cancelar()
+
+            fecha = None
+            solo_a_tiempo = True
+            paso = 0
+
+            try:
+                while paso < 2:
+                    try:
+                        if paso == 0:
+                            fecha = pedir_fecha("Fecha de devolución a consultar")
+                            paso = 1
+                        elif paso == 1:
+                            solo_a_tiempo = confirmar(
+                                "¿Mostrar únicamente devoluciones entregadas a tiempo?"
+                            )
+                            paso = 2
+                    except PasoAnterior:
+                        if paso == 0:
+                            return
+                        paso -= 1
+                        mostrar_aviso("Regresando al campo anterior...")
+
+                registros = self.prestamos.consultar_devoluciones_por_fecha(
+                    fecha, solo_a_tiempo=solo_a_tiempo
+                )
+                etiqueta = "a tiempo " if solo_a_tiempo else ""
+                if not registros:
+                    mostrar_aviso(
+                        f"No se encontraron devoluciones {etiqueta}el {formatear_fecha(fecha)}."
+                    )
+                else:
+                    filas = [
+                        (
+                            r["fecha_devolucion"],
+                            r["folio"],
+                            r["fecha_salida"],
+                            r["fecha_limite"],
+                            r["isbn"],
+                            r["ejemplar"],
+                            r["titulo"],
+                            r["subtitulo"],
+                        )
+                        for r in registros
+                    ]
+                    mostrar_tabla(
+                        f"Devoluciones {etiqueta}del {formatear_fecha(fecha)} ({len(registros)} registro(s))",
+                        [
+                            "Fecha Dev.",
+                            "Folio",
+                            "Fecha Prést.",
+                            "Fecha Límite",
+                            "ISBN",
+                            "Ej. #",
+                            "Título",
+                            "Subtítulo",
+                        ],
+                        filas,
+                    )
+
+                if not self._confirmar_continuar("¿Deseas consultar devoluciones de OTRA fecha?"):
+                    return
+            except OperacionCancelada:
+                return
+            except Error as e:
+                mostrar_error(f"Error al consultar devoluciones: {e}")
+                pausar()
+                return
+
+    def _registrar_devolucion(self):
+        while True:
+            limpiar_pantalla()
+            mostrar_titulo(
+                "REGISTRAR DEVOLUCIÓN DE EJEMPLAR",
                 f"Recibe: {self.empleado_activo.nombre_completo} (multa automática si hay retraso: ${TARIFA_MULTA_DIA}/día)",
             )
 
@@ -1433,18 +1726,18 @@ class AplicacionBiblioteca:
                     return
 
     # ==========================================================
-    # REGISTRO 5: MULTAS POR DEVOLUCIÓN TARDÍA
+    # OPCIÓN 5: MULTAS POR DEVOLUCIÓN TARDÍA (+ FICHA COMPLETA DE MULTA)
     # ==========================================================
     def flujo_multas(self):
         while True:
             limpiar_pantalla()
             mostrar_titulo(
-                "REGISTRO 5: MULTAS POR DEVOLUCIÓN TARDÍA",
+                "MULTAS POR DEVOLUCIÓN TARDÍA",
                 f"Las multas se generan automáticamente al devolver tarde (${TARIFA_MULTA_DIA}/día)",
             )
             print("1. Generar automáticamente multas faltantes (para devoluciones tardías sin multa)")
             print("2. Marcar una multa pendiente como 'Pagada'")
-            print("3. Ver historial completo de multas")
+            print("3. Ver historial y consultar detalle completo de una multa")
             print("0. Volver\n")
 
             op = pedir_entero(
@@ -1482,8 +1775,59 @@ class AplicacionBiblioteca:
             elif op == 2:
                 self._pagar_multas()
             elif op == 3:
-                self._mostrar_multas(self.multas.listar_multas())
+                self._consultar_detalle_multas()
+
+    def _consultar_detalle_multas(self):
+        while True:
+            limpiar_pantalla()
+            mostrar_titulo("HISTORIAL Y DETALLE COMPLETO DE MULTAS")
+            multas = self.multas.listar_multas()
+            if not multas:
+                mostrar_aviso("No hay multas registradas.")
                 pausar()
+                return
+
+            self._mostrar_multas(multas)
+            mostrar_ayuda_cancelar()
+            try:
+                if not confirmar("¿Deseas ver la ficha completa de una multa específica?"):
+                    return
+
+                while True:
+                    id_multa = pedir_entero("Número de multa a consultar", minimo=1)
+                    detalle = self.multas.consultar_detalle_multa(id_multa)
+                    if not detalle:
+                        mostrar_error("No existe ninguna multa con ese número.")
+                        continue
+                    break
+
+                mostrar_ficha(
+                    f"INFORMACIÓN COMPLETA DE LA MULTA #{detalle['id_multa']}",
+                    [
+                        ("Número de multa", detalle["id_multa"]),
+                        ("Estado", detalle["estado"]),
+                        ("Número de préstamo", detalle["prestamo"]),
+                        ("Fecha del préstamo", detalle["fecha_salida"]),
+                        ("Usuario", detalle["usuario"]),
+                        ("ISBN", detalle["isbn"]),
+                        ("Título", detalle["titulo"]),
+                        ("Subtítulo", detalle["subtitulo"]),
+                        ("Número de ejemplar", detalle["ejemplar"]),
+                        ("Fecha establecida", detalle["fecha_limite"]),
+                        ("Fecha real devolución", detalle["fecha_devolucion"]),
+                        ("Días de retraso", detalle["dias_retraso"]),
+                        ("Monto por día", f"${detalle['monto_dia']}"),
+                        ("Monto total", f"${detalle['total']}"),
+                    ],
+                )
+                if not self._confirmar_continuar("¿Deseas consultar el detalle de OTRA multa?"):
+                    return
+            except (OperacionCancelada, PasoAnterior):
+                return
+            except Error as e:
+                mostrar_error(f"Error al consultar multa: {e}")
+                pausar()
+                return
 
     def _pagar_multas(self):
         while True:
@@ -1532,7 +1876,7 @@ class AplicacionBiblioteca:
                     return
 
     # ==========================================================
-    # CATÁLOGOS AUXILIARES
+    # OPCIÓN 6: CATÁLOGOS AUXILIARES
     # ==========================================================
     def menu_catalogos(self):
         while True:
@@ -2228,7 +2572,7 @@ class AplicacionBiblioteca:
                     return
 
     # ==========================================================
-    # LISTADOS RÁPIDOS DE APOYO
+    # OPCIÓN 7: LISTADOS RÁPIDOS DE APOYO
     # ==========================================================
     def menu_listados_apoyo(self):
         while True:
@@ -2310,11 +2654,21 @@ class AplicacionBiblioteca:
 
     def _mostrar_obras(self, datos):
         filas = [
-            (d["isbn"], d["titulo"], d["anio"], d["tipo_obra"], d["genero"], d["total_ejemplares"])
+            (
+                d["isbn"],
+                d["titulo"],
+                d["anio"],
+                d["tipo_obra"],
+                d["genero"],
+                d["total_autores"],
+                d["total_ejemplares"],
+            )
             for d in datos
         ]
         mostrar_tabla(
-            "Obras", ["ISBN", "Título", "Año", "Tipo", "Categoría", "Ejemplares"], filas
+            "Obras",
+            ["ISBN", "Título", "Año", "Tipo", "Categoría", "Autores", "Ejemplares"],
+            filas,
         )
 
     def _mostrar_resumen_disponibles(self, datos):
@@ -2371,7 +2725,6 @@ class AplicacionBiblioteca:
                 d["obra"],
                 d["ejemplar"],
                 d["dias_retraso"],
-                f"${d['monto_dia']}",
                 f"${d['total']}",
                 d["estado"],
             )
@@ -2379,7 +2732,7 @@ class AplicacionBiblioteca:
         ]
         mostrar_tabla(
             "Multas",
-            ["Multa #", "Folio", "Usuario", "ISBN", "Ej. #", "Días", "Monto/Día", "Total", "Estado"],
+            ["Multa #", "Folio", "Usuario", "ISBN", "Ej. #", "Días", "Total", "Estado"],
             filas,
         )
 

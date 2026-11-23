@@ -1,4 +1,4 @@
-"""Funciones auxiliares en consola estándar (sin librerías externas) para validaciones y tablas."""
+"""Funciones auxiliares en consola estándar (sin librerías externas) para validaciones, fichas y tablas."""
 
 import os
 from datetime import date, datetime
@@ -63,6 +63,32 @@ def mostrar_error(mensaje):
 
 def mostrar_aviso(mensaje):
     print(f"[AVISO] {mensaje}")
+
+
+def mostrar_ficha(titulo, campos):
+    """Muestra información detallada en formato vertical (etiqueta: valor) sin desbordar la terminal."""
+    ancho_etiqueta = max(len(str(etq)) for etq, _ in campos) if campos else 10
+    linea = "-" * max(55, len(titulo) + 4)
+    print(f"\n{linea}")
+    print(f"  {titulo}")
+    print(linea)
+
+    for etiqueta, valor in campos:
+        if valor is None:
+            print(f"  {str(etiqueta):<{ancho_etiqueta}} : -")
+        elif isinstance(valor, date):
+            print(f"  {str(etiqueta):<{ancho_etiqueta}} : {valor.strftime(FORMATO_FECHA)}")
+        elif isinstance(valor, (list, tuple)):
+            if not valor:
+                print(f"  {str(etiqueta):<{ancho_etiqueta}} : -")
+            else:
+                print(f"  {str(etiqueta):<{ancho_etiqueta}} : {valor[0]}")
+                for extra in valor[1:]:
+                    print(f"  {'':<{ancho_etiqueta}}   {extra}")
+        else:
+            print(f"  {str(etiqueta):<{ancho_etiqueta}} : {valor}")
+
+    print(f"{linea}\n")
 
 
 def mostrar_tabla(titulo, columnas, filas):
@@ -220,7 +246,7 @@ def pedir_fecha(
         try:
             return datetime.strptime(texto, FORMATO_FECHA).date()
         except ValueError:
-            mostrar_error("Formato de fecha inválido. Usa DD-MM-AAAA (ejemplo: 22-11-2026).")
+            mostrar_error("Formato de fecha inválido. Usa DD-MM-AAAA (ejemplo: 23-11-2026).")
 
 
 def confirmar(etiqueta, permitir_cancelar=True, permitir_atras=True):
