@@ -80,7 +80,7 @@ class MenuObras:
 
         while True:
             limpiar_pantalla()
-            mostrar_titulo("ACTUALIZAR DATOS DE UNA OBRA")
+            mostrar_titulo("EDITAR UNA OBRA")
 
             obras = self.obras.listar_obras()
             if not obras:

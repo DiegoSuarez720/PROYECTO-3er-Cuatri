@@ -514,9 +514,11 @@ INSERT INTO ejemplar (obra, ejemplar, localizacion) VALUES
 -- 5. EMPLEADOS FICTICIOS
 -- ============================================================
 INSERT INTO empleado (id_empleado, nombre_pila, primer_ap, segundo_ap, nombre_user, `contraseña`) VALUES
-(2, 'Laura',  'Méndez',  'Ríos', 'lmendez',  'laura123'),
-(3, 'Carlos', 'Torres',  'Vega', 'ctorres',  'carlos123'),
-(4, 'Sofía',  'Navarro', 'Cruz', 'snavarro', 'sofia123');
+(2, 'Isela',  'Miranda',  'Hernandez', 'Angel',  'miranda123'),
+(3, 'Humberto', 'Carlos',  'Lopez', 'Camacho',  'humberto123'),
+(4, 'Diego',  'Aaron', 'Suarez', 'Garcia', 'diego123'),
+(5,'Angel', 'Javier', 'Vazquez', 'Jimenez','angel123')
+
 
 -- ============================================================
 -- 6. USUARIOS Y TELÉFONOS FICTICIOS
