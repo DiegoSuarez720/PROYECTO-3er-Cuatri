@@ -57,3 +57,10 @@ class ConexionDB:
         if self._conexion and self._conexion.is_connected():
             self._conexion.close()
             self._conexion = None
+
+
+class GestorBase:
+    """Clase base para compartir la conexión Singleton entre todos los gestores."""
+
+    def __init__(self):
+        self.db = ConexionDB()
