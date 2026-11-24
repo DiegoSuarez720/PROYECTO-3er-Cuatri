@@ -1,11 +1,11 @@
-"""Clases POO correspondientes a las entidades del Modelo Relacional (20 tablas)."""
+"""Archivo de modelos. Aqui estan las clases que representan los datos de la biblioteca (personas, obras, prestamos, multas, etc.)."""
 
 from datetime import timedelta
 from decimal import Decimal
 
 
 def _validar_texto(valor, campo, max_len, obligatorio=True):
-    """Validador reutilizable para setters de cadenas."""
+    """Revisa un texto: que no este vacio (si es obligatorio) y que no sea muy largo."""
     if valor is None or str(valor).strip() == "":
         if obligatorio:
             raise ValueError(f"El campo '{campo}' es obligatorio.")
@@ -17,7 +17,7 @@ def _validar_texto(valor, campo, max_len, obligatorio=True):
 
 
 class Persona:
-    """Clase base para personas del sistema (Autor, Usuario y Empleado)."""
+    """Clase Persona. Guarda nombre y apellidos; la usan Autor, Usuario y Empleado."""
 
     def __init__(self, nombre_pila, primer_ap, segundo_ap=None):
         self.nombre_pila = nombre_pila
@@ -57,6 +57,7 @@ class Persona:
 
 
 class Autor(Persona):
+    """Clase Autor. Persona que escribe las obras."""
     def __init__(self, nombre_pila, primer_ap, segundo_ap=None, num_id=None):
         super().__init__(nombre_pila, primer_ap, segundo_ap)
         self.num_id = num_id
@@ -66,6 +67,7 @@ class Autor(Persona):
 
 
 class Usuario(Persona):
+    """Clase Usuario. Persona que pide prestamos; tiene direccion y telefonos."""
     def __init__(
         self,
         nombre_pila,
@@ -113,6 +115,7 @@ class Usuario(Persona):
 
 
 class Empleado(Persona):
+    """Clase Empleado. Persona que trabaja en la biblioteca y entra con usuario y contrasena."""
     def __init__(
         self,
         nombre_pila,
@@ -148,6 +151,7 @@ class Empleado(Persona):
 
 
 class Pais:
+    """Clase Pais. Guarda la clave y el nombre de un pais."""
     def __init__(self, clave, nombre):
         self.clave = clave
         self.nombre = nombre
@@ -173,6 +177,7 @@ class Pais:
 
 
 class Categoria:
+    """Clase Categoria. Guarda el codigo y el genero de una obra."""
     def __init__(self, codigo, genero):
         self.codigo = codigo
         self.genero = genero
@@ -198,6 +203,7 @@ class Categoria:
 
 
 class TipoObra:
+    """Clase TipoObra. Guarda el tipo de obra (libro, revista, etc.)."""
     def __init__(self, tipo_obra, id_tipo=None):
         self.id_tipo = id_tipo
         self.tipo_obra = tipo_obra
@@ -215,6 +221,7 @@ class TipoObra:
 
 
 class Editorial:
+    """Clase Editorial. Guarda el nombre de la editorial y su pais."""
     def __init__(self, nombre, pais, id_editorial=None):
         self.id_editorial = id_editorial
         self.nombre = nombre
@@ -241,6 +248,7 @@ class Editorial:
 
 
 class Proveedor:
+    """Clase Proveedor. Guarda el RFC, la empresa y los telefonos de quien surte obras."""
     def __init__(self, rfc, nombre_empresa, telefonos=None):
         self.rfc = rfc
         self.nombre_empresa = nombre_empresa
@@ -267,6 +275,7 @@ class Proveedor:
 
 
 class Localizacion:
+    """Clase Localizacion. Guarda donde esta un ejemplar: seccion, pasillo y estante."""
     def __init__(self, estante, seccion, pasillo, id_localizacion=None):
         self.id_localizacion = id_localizacion
         self.estante = estante
@@ -306,6 +315,7 @@ class Localizacion:
 
 
 class Obra:
+    """Clase Obra. Guarda los datos de un libro u obra: ISBN, titulo, anio, paginas, tipo y categoria."""
     def __init__(
         self,
         isbn,
@@ -385,6 +395,7 @@ class Obra:
 
 
 class Ejemplar:
+    """Clase Ejemplar. Es una copia fisica de una obra y su localizacion."""
     def __init__(self, obra, ejemplar, localizacion):
         self.obra = obra
         self.ejemplar = ejemplar
@@ -395,6 +406,7 @@ class Ejemplar:
 
 
 class Prestamo:
+    """Clase Prestamo. Guarda la salida de ejemplares, el usuario, el empleado y la fecha limite."""
     DIAS_PLAZO = 14
 
     def __init__(
@@ -424,6 +436,7 @@ class Prestamo:
 
 
 class Devolucion:
+    """Clase Devolucion. Guarda cuando se regresa un ejemplar de un prestamo."""
     def __init__(
         self,
         fecha_devolucion,
@@ -445,6 +458,7 @@ class Devolucion:
 
 
 class Multa:
+    """Clase Multa. Guarda el cobro por entregar tarde: dias de retraso, monto y estado."""
     def __init__(
         self,
         devolucion,

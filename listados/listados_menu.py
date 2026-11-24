@@ -1,4 +1,4 @@
-"""Menú de listados rápidos de apoyo (Opción 7 -> 1, 2, 3 y 4)."""
+"""Archivo del menu de listados. Aqui se ven las consultas rapidas (opcion 7 -> 1, 2, 3 y 4)."""
 
 from nucleo.utilidades import (
     limpiar_pantalla,
@@ -15,7 +15,7 @@ from nucleo.vistas import (
 
 
 class MenuListados:
-    """Opción 7: obras, ejemplares disponibles, préstamos activos y multas."""
+    """Clase del menu de listados. Aqui se ven las obras, ejemplares disponibles, prestamos activos y multas (opcion 7)."""
 
     def __init__(self, obras, prestamos, multas):
         self.obras = obras

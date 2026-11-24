@@ -1,16 +1,16 @@
-"""Consultas SQL de préstamos (Opción 3; también alimenta Opción 7).
-
-ÍNDICE (opción del menú -> método):
-  [OPCIÓN 3 -> 1 | OPCIÓN 7 -> 2]  ->  listar_resumen_disponibles()
-  [OPCIÓN 3 -> 1]  ->  obtener_ejemplares_disponibles_por_isbn()
-  [OPCIÓN 3 -> 1]  ->  ejemplar_disponible()
-  [OPCIÓN 3 -> 1]  ->  registrar_prestamo()
-  [OPCIÓN 3 -> 2]  ->  listar_todos_prestamos()
-  [OPCIÓN 3 -> 2]  ->  consultar_detalle_prestamo()
-  [OPCIÓN 3 -> 3]  ->  listar_fechas_prestamos()
-  [OPCIÓN 3 -> 3]  ->  consultar_prestamos_por_fecha()
-  [OPCIÓN 7 -> 3]  ->  listar_prestamos_activos_detalle()
-"""
+# En este archivo se ven las consultas SQL de prestamos (opcion 3 del menu;
+# tambien se usan en la opcion 7).
+#
+# INDICE (opcion del menu -> metodo):
+#   [OPCION 3 -> 1 | OPCION 7 -> 2]  ->  listar_resumen_disponibles()
+#   [OPCION 3 -> 1]  ->  obtener_ejemplares_disponibles_por_isbn()
+#   [OPCION 3 -> 1]  ->  ejemplar_disponible()
+#   [OPCION 3 -> 1]  ->  registrar_prestamo()
+#   [OPCION 3 -> 2]  ->  listar_todos_prestamos()
+#   [OPCION 3 -> 2]  ->  consultar_detalle_prestamo()
+#   [OPCION 3 -> 3]  ->  listar_fechas_prestamos()
+#   [OPCION 3 -> 3]  ->  consultar_prestamos_por_fecha()
+#   [OPCION 7 -> 3]  ->  listar_prestamos_activos_detalle()
 
 from datetime import date, timedelta
 from mysql.connector import Error
@@ -20,68 +20,76 @@ from nucleo.utilidades import formatear_fecha
 
 
 class GestorPrestamos(GestorBase):
-    """Préstamos, devoluciones y consultas de historial por folio y por fecha."""
+    # Esta clase maneja los prestamos y las consultas por folio y por fecha.
 
-    # [OPCIÓN 3 -> 1 | OPCIÓN 7 -> 2]
+    # Ayuda: trae las devoluciones como un conjunto de (obra, ejemplar, prestamo)
+    def _obtener_devueltos(self, cursor):
+        cursor.execute("SELECT obra, ejemplar, prestamo FROM devolucion")
+        return set((f["obra"], f["ejemplar"], f["prestamo"]) for f in cursor.fetchall())
+
+    # Ayuda: trae los ejemplares que estan prestados ahora (sin devolver)
+    # Regresa un conjunto de (obra, ejemplar)
+    def _obtener_prestados(self, cursor):
+        devueltos = self._obtener_devueltos(cursor)
+        cursor.execute("SELECT obra, ejemplar, prestamo FROM prestamo_ejemplar")
+        prestados = set()
+        for fila in cursor.fetchall():
+            if (fila["obra"], fila["ejemplar"], fila["prestamo"]) not in devueltos:
+                prestados.add((fila["obra"], fila["ejemplar"]))
+        return prestados
+
+    # [OPCION 3 -> 1 | OPCION 7 -> 2]
     def listar_resumen_disponibles(self):
-        """Muestra por cada obra únicamente la cantidad de ejemplares actualmente DISPONIBLES."""
+        # Por cada obra, cuantos ejemplares estan disponibles ahora
         cursor = self.db.obtener_cursor()
         try:
+            prestados = self._obtener_prestados(cursor)
+
             sql = """
-                SELECT o.isbn, o.titulo, COUNT(e.ejemplar) AS disponibles
-                FROM ejemplar e
-                INNER JOIN obra o ON e.obra = o.isbn
-                WHERE NOT EXISTS (
-                    SELECT 1
-                    FROM prestamo_ejemplar pe
-                    LEFT JOIN devolucion d
-                      ON d.obra = pe.obra
-                     AND d.ejemplar = pe.ejemplar
-                     AND d.prestamo = pe.prestamo
-                    WHERE pe.obra = e.obra
-                      AND pe.ejemplar = e.ejemplar
-                      AND d.id_devolucion IS NULL
-                )
-                GROUP BY o.isbn, o.titulo
-                HAVING COUNT(e.ejemplar) > 0
-                ORDER BY o.titulo
+                SELECT ob.isbn, ob.titulo, ej.ejemplar
+                FROM ejemplar AS ej
+                INNER JOIN obra AS ob ON ej.obra = ob.isbn
+                ORDER BY ob.titulo, ob.isbn, ej.ejemplar
             """
             cursor.execute(sql)
-            return cursor.fetchall()
+
+            resumen = {}
+            for fila in cursor.fetchall():
+                if (fila["isbn"], fila["ejemplar"]) in prestados:
+                    continue
+                if fila["isbn"] not in resumen:
+                    resumen[fila["isbn"]] = {
+                        "isbn": fila["isbn"],
+                        "titulo": fila["titulo"],
+                        "disponibles": 0,
+                    }
+                resumen[fila["isbn"]]["disponibles"] += 1
+            return list(resumen.values())
         finally:
             cursor.close()
 
-    # [OPCIÓN 3 -> 1]
+    # [OPCION 3 -> 1]
     def obtener_ejemplares_disponibles_por_isbn(self, isbn):
-        """Devuelve la lista de ejemplares disponibles (con su ubicación) para un ISBN específico."""
+        # Ejemplares disponibles de un ISBN, con su ubicacion
         cursor = self.db.obtener_cursor()
         try:
+            prestados = self._obtener_prestados(cursor)
+
             sql = """
-                SELECT e.obra, o.titulo, e.ejemplar,
-                       l.seccion, l.pasillo, l.estante
-                FROM ejemplar e
-                INNER JOIN obra o ON e.obra = o.isbn
-                INNER JOIN localizacion l ON e.localizacion = l.id_localizacion
-                WHERE e.obra = %s
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM prestamo_ejemplar pe
-                      LEFT JOIN devolucion d
-                        ON d.obra = pe.obra
-                       AND d.ejemplar = pe.ejemplar
-                       AND d.prestamo = pe.prestamo
-                      WHERE pe.obra = e.obra
-                        AND pe.ejemplar = e.ejemplar
-                        AND d.id_devolucion IS NULL
-                  )
-                ORDER BY e.ejemplar
+                SELECT ej.obra, ob.titulo, ej.ejemplar,
+                       loc.seccion, loc.pasillo, loc.estante
+                FROM ejemplar AS ej
+                INNER JOIN obra AS ob ON ej.obra = ob.isbn
+                INNER JOIN localizacion AS loc ON ej.localizacion = loc.id_localizacion
+                WHERE ej.obra = %s
+                ORDER BY ej.ejemplar
             """
             cursor.execute(sql, (isbn,))
-            return cursor.fetchall()
+            return [f for f in cursor.fetchall() if (f["obra"], f["ejemplar"]) not in prestados]
         finally:
             cursor.close()
 
-    # [OPCIÓN 3 -> 1]
+    # [OPCION 3 -> 1]
     def ejemplar_disponible(self, isbn, num_ejemplar):
         cursor = self.db.obtener_cursor()
         try:
@@ -92,25 +100,30 @@ class GestorPrestamos(GestorBase):
             if cursor.fetchone() is None:
                 return False
 
-            sql = """
-                SELECT 1
-                FROM prestamo_ejemplar pe
-                LEFT JOIN devolucion d
-                  ON d.obra = pe.obra
-                 AND d.ejemplar = pe.ejemplar
-                 AND d.prestamo = pe.prestamo
-                WHERE pe.obra = %s
-                  AND pe.ejemplar = %s
-                  AND d.id_devolucion IS NULL
-            """
-            cursor.execute(sql, (isbn, num_ejemplar))
-            return cursor.fetchone() is None
+            # Prestamos de este ejemplar y sus devoluciones
+            cursor.execute(
+                "SELECT prestamo FROM prestamo_ejemplar WHERE obra = %s AND ejemplar = %s",
+                (isbn, num_ejemplar),
+            )
+            prestamos = [f["prestamo"] for f in cursor.fetchall()]
+
+            cursor.execute(
+                "SELECT prestamo FROM devolucion WHERE obra = %s AND ejemplar = %s",
+                (isbn, num_ejemplar),
+            )
+            devueltos = [f["prestamo"] for f in cursor.fetchall()]
+
+            # Esta disponible si todos sus prestamos ya se devolvieron
+            for folio in prestamos:
+                if folio not in devueltos:
+                    return False
+            return True
         finally:
             cursor.close()
 
-    # [OPCIÓN 3 -> 1]
+    # [OPCION 3 -> 1]
     def registrar_prestamo(self, prestamo):
-        """Crea el préstamo (fecha_limite = +14 días) validando fechas y disponibilidad."""
+        # Crea el prestamo (fecha limite = +14 dias) revisando fechas y disponibilidad
         hoy = date.today()
         if prestamo.fecha_salida > hoy:
             raise ValueError("La fecha de salida del préstamo no puede ser futura.")
@@ -172,134 +185,176 @@ class GestorPrestamos(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 3 -> 2]
+    # [OPCION 3 -> 2]
     def listar_todos_prestamos(self):
-        """Lista todos los préstamos (activos y finalizados) con total de ejemplares y pendientes."""
+        # Todos los prestamos con el total de ejemplares y cuantos faltan por devolver
         cursor = self.db.obtener_cursor()
         try:
+            devueltos = self._obtener_devueltos(cursor)
+
             sql = """
-                SELECT p.folio, p.fecha_salida, p.fecha_limite,
-                       CONCAT_WS(' ', u.nombre_pila, u.primer_ap, u.segundo_ap) AS usuario,
-                       COUNT(pe.ejemplar) AS total_ejemplares,
-                       SUM(CASE WHEN d.id_devolucion IS NULL THEN 1 ELSE 0 END) AS pendientes
-                FROM prestamo p
-                INNER JOIN usuario u ON p.usuario = u.id_usuario
-                INNER JOIN prestamo_ejemplar pe ON p.folio = pe.prestamo
-                LEFT JOIN devolucion d
-                  ON d.obra = pe.obra
-                 AND d.ejemplar = pe.ejemplar
-                 AND d.prestamo = pe.prestamo
-                GROUP BY p.folio, p.fecha_salida, p.fecha_limite,
-                         u.nombre_pila, u.primer_ap, u.segundo_ap
-                ORDER BY p.folio
+                SELECT pres.folio, pres.fecha_salida, pres.fecha_limite,
+                       CONCAT(us.nombre_pila, ' ', us.primer_ap, ' ', IFNULL(us.segundo_ap, '')) AS usuario,
+                       presej.obra, presej.ejemplar
+                FROM prestamo AS pres
+                INNER JOIN usuario AS us ON pres.usuario = us.id_usuario
+                INNER JOIN prestamo_ejemplar AS presej ON pres.folio = presej.prestamo
+                ORDER BY pres.folio
             """
             cursor.execute(sql)
-            return cursor.fetchall()
+
+            prestamos = {}
+            for fila in cursor.fetchall():
+                folio = fila["folio"]
+                if folio not in prestamos:
+                    prestamos[folio] = {
+                        "folio": folio,
+                        "fecha_salida": fila["fecha_salida"],
+                        "fecha_limite": fila["fecha_limite"],
+                        "usuario": fila["usuario"].strip(),
+                        "total_ejemplares": 0,
+                        "pendientes": 0,
+                    }
+                prestamos[folio]["total_ejemplares"] += 1
+                if (fila["obra"], fila["ejemplar"], folio) not in devueltos:
+                    prestamos[folio]["pendientes"] += 1
+            return list(prestamos.values())
         finally:
             cursor.close()
 
-    # [OPCIÓN 3 -> 2]
+    # [OPCION 3 -> 2]
     def consultar_detalle_prestamo(self, folio):
-        """Obtiene la información completa de un préstamo y todos sus ejemplares (devueltos o pendientes)."""
+        # Informacion completa de un prestamo y todos sus ejemplares
         cursor = self.db.obtener_cursor()
         try:
             sql = """
-                SELECT p.folio,
-                       p.fecha_salida,
-                       p.fecha_limite,
-                       CONCAT_WS(' ', u.nombre_pila, u.primer_ap, u.segundo_ap) AS usuario,
-                       o.isbn,
-                       o.titulo,
-                       o.subtitulo,
-                       pe.ejemplar,
-                       d.fecha_devolucion
-                FROM prestamo AS p
-                INNER JOIN usuario AS u ON p.usuario = u.id_usuario
-                INNER JOIN prestamo_ejemplar AS pe ON pe.prestamo = p.folio
-                INNER JOIN obra AS o ON pe.obra = o.isbn
-                LEFT JOIN devolucion AS d
-                  ON d.obra = pe.obra
-                 AND d.ejemplar = pe.ejemplar
-                 AND d.prestamo = pe.prestamo
-                WHERE p.folio = %s
-                ORDER BY o.titulo, pe.ejemplar
+                SELECT pres.folio,
+                       pres.fecha_salida,
+                       pres.fecha_limite,
+                       CONCAT(us.nombre_pila, ' ', us.primer_ap, ' ', IFNULL(us.segundo_ap, '')) AS usuario,
+                       ob.isbn,
+                       ob.titulo,
+                       ob.subtitulo,
+                       presej.ejemplar
+                FROM prestamo AS pres
+                INNER JOIN usuario AS us ON pres.usuario = us.id_usuario
+                INNER JOIN prestamo_ejemplar AS presej ON presej.prestamo = pres.folio
+                INNER JOIN obra AS ob ON presej.obra = ob.isbn
+                WHERE pres.folio = %s
+                ORDER BY ob.titulo, presej.ejemplar
             """
             cursor.execute(sql, (folio,))
-            return cursor.fetchall()
+            filas = cursor.fetchall()
+
+            # Fechas de devolucion de este prestamo, por (obra, ejemplar)
+            cursor.execute(
+                "SELECT obra, ejemplar, fecha_devolucion FROM devolucion WHERE prestamo = %s",
+                (folio,),
+            )
+            fechas_dev = {(f["obra"], f["ejemplar"]): f["fecha_devolucion"] for f in cursor.fetchall()}
+
+            for fila in filas:
+                fila["usuario"] = fila["usuario"].strip()
+                fila["fecha_devolucion"] = fechas_dev.get((fila["isbn"], fila["ejemplar"]))
+            return filas
         finally:
             cursor.close()
 
-    # [OPCIÓN 3 -> 3]
+    # [OPCION 3 -> 3]
     def listar_fechas_prestamos(self):
-        """Lista las fechas en las que existen préstamos registrados y su conteo."""
+        # Fechas con prestamos y cuantos prestamos y ejemplares hubo en cada una
         cursor = self.db.obtener_cursor()
         try:
             sql = """
-                SELECT p.fecha_salida,
-                       COUNT(DISTINCT p.folio) AS total_prestamos,
-                       COUNT(pe.ejemplar) AS total_ejemplares
-                FROM prestamo AS p
-                INNER JOIN prestamo_ejemplar AS pe ON pe.prestamo = p.folio
-                GROUP BY p.fecha_salida
-                ORDER BY p.fecha_salida DESC
+                SELECT pres.fecha_salida, pres.folio, presej.ejemplar
+                FROM prestamo AS pres
+                INNER JOIN prestamo_ejemplar AS presej ON presej.prestamo = pres.folio
+                ORDER BY pres.fecha_salida DESC
             """
             cursor.execute(sql)
-            return cursor.fetchall()
+
+            fechas = {}
+            for fila in cursor.fetchall():
+                fecha = fila["fecha_salida"]
+                if fecha not in fechas:
+                    fechas[fecha] = {"folios": set(), "total_ejemplares": 0}
+                fechas[fecha]["folios"].add(fila["folio"])
+                fechas[fecha]["total_ejemplares"] += 1
+
+            resultado = []
+            for fecha, datos in fechas.items():
+                resultado.append(
+                    {
+                        "fecha_salida": fecha,
+                        "total_prestamos": len(datos["folios"]),
+                        "total_ejemplares": datos["total_ejemplares"],
+                    }
+                )
+            return resultado
         finally:
             cursor.close()
 
-    # [OPCIÓN 3 -> 3]
+    # [OPCION 3 -> 3]
     def consultar_prestamos_por_fecha(self, fecha):
-        """Lista los préstamos realizados en una fecha específica con cantidad de ejemplares y empleado."""
+        # Prestamos de una fecha con cantidad de ejemplares y empleado
         cursor = self.db.obtener_cursor()
         try:
             sql = """
-                SELECT p.fecha_salida,
-                       p.folio,
-                       CONCAT_WS(' ', u.nombre_pila, u.primer_ap, u.segundo_ap) AS usuario,
-                       COUNT(pe.ejemplar) AS cantidad_ejemplares,
-                       p.fecha_limite,
-                       CONCAT_WS(' ', e.nombre_pila, e.primer_ap, e.segundo_ap) AS empleado
-                FROM prestamo AS p
-                INNER JOIN usuario AS u ON p.usuario = u.id_usuario
-                INNER JOIN empleado AS e ON p.empleado = e.id_empleado
-                INNER JOIN prestamo_ejemplar AS pe ON pe.prestamo = p.folio
-                WHERE p.fecha_salida = %s
-                GROUP BY p.fecha_salida,
-                         p.folio,
-                         u.nombre_pila, u.primer_ap, u.segundo_ap,
-                         p.fecha_limite,
-                         e.nombre_pila, e.primer_ap, e.segundo_ap
-                ORDER BY p.folio
+                SELECT pres.fecha_salida,
+                       pres.folio,
+                       CONCAT(us.nombre_pila, ' ', us.primer_ap, ' ', IFNULL(us.segundo_ap, '')) AS usuario,
+                       COUNT(presej.ejemplar) AS cantidad_ejemplares,
+                       pres.fecha_limite,
+                       CONCAT(emp.nombre_pila, ' ', emp.primer_ap, ' ', IFNULL(emp.segundo_ap, '')) AS empleado
+                FROM prestamo AS pres
+                INNER JOIN usuario AS us ON pres.usuario = us.id_usuario
+                INNER JOIN empleado AS emp ON pres.empleado = emp.id_empleado
+                INNER JOIN prestamo_ejemplar AS presej ON presej.prestamo = pres.folio
+                WHERE pres.fecha_salida = %s
+                GROUP BY pres.fecha_salida,
+                         pres.folio,
+                         us.nombre_pila, us.primer_ap, us.segundo_ap,
+                         pres.fecha_limite,
+                         emp.nombre_pila, emp.primer_ap, emp.segundo_ap
+                ORDER BY pres.folio
             """
             cursor.execute(sql, (fecha,))
-            return cursor.fetchall()
+            filas = cursor.fetchall()
+            for fila in filas:
+                fila["usuario"] = fila["usuario"].strip()
+                fila["empleado"] = fila["empleado"].strip()
+            return filas
         finally:
             cursor.close()
 
-    # [OPCIÓN 7 -> 3]
+    # [OPCION 7 -> 3]
     def listar_prestamos_activos_detalle(self):
-        """Detalle completo de cada ejemplar actualmente prestado."""
+        # Detalle de cada ejemplar que esta prestado ahora
         cursor = self.db.obtener_cursor()
         try:
+            devueltos = self._obtener_devueltos(cursor)
+
             sql = """
-                SELECT p.folio, p.fecha_salida, p.fecha_limite,
-                       CONCAT_WS(' ', u.nombre_pila, u.primer_ap, u.segundo_ap) AS usuario,
-                       pe.obra, o.titulo, pe.ejemplar,
-                       CONCAT_WS(' ', e.nombre_pila, e.primer_ap, e.segundo_ap) AS empleado
-                FROM prestamo p
-                INNER JOIN usuario u ON p.usuario = u.id_usuario
-                INNER JOIN empleado e ON p.empleado = e.id_empleado
-                INNER JOIN prestamo_ejemplar pe ON p.folio = pe.prestamo
-                INNER JOIN obra o ON pe.obra = o.isbn
-                LEFT JOIN devolucion d
-                  ON d.obra = pe.obra
-                 AND d.ejemplar = pe.ejemplar
-                 AND d.prestamo = pe.prestamo
-                WHERE d.id_devolucion IS NULL
-                ORDER BY p.folio, o.titulo, pe.ejemplar
+                SELECT pres.folio, pres.fecha_salida, pres.fecha_limite,
+                       CONCAT(us.nombre_pila, ' ', us.primer_ap, ' ', IFNULL(us.segundo_ap, '')) AS usuario,
+                       presej.obra, ob.titulo, presej.ejemplar,
+                       CONCAT(emp.nombre_pila, ' ', emp.primer_ap, ' ', IFNULL(emp.segundo_ap, '')) AS empleado
+                FROM prestamo AS pres
+                INNER JOIN usuario AS us ON pres.usuario = us.id_usuario
+                INNER JOIN empleado AS emp ON pres.empleado = emp.id_empleado
+                INNER JOIN prestamo_ejemplar AS presej ON pres.folio = presej.prestamo
+                INNER JOIN obra AS ob ON presej.obra = ob.isbn
+                ORDER BY pres.folio, ob.titulo, presej.ejemplar
             """
             cursor.execute(sql)
-            return cursor.fetchall()
+
+            activos = []
+            for fila in cursor.fetchall():
+                if (fila["obra"], fila["ejemplar"], fila["folio"]) in devueltos:
+                    continue
+                fila["usuario"] = fila["usuario"].strip()
+                fila["empleado"] = fila["empleado"].strip()
+                activos.append(fila)
+            return activos
         finally:
             cursor.close()

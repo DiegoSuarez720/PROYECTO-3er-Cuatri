@@ -1,4 +1,4 @@
-"""Menú de multas (Opción 5 -> 1, 2 y 3)."""
+"""Este archivo tiene el menu de multas (opcion 5 -> 1, 2 y 3): generar multas, marcar como pagada y consultar."""
 
 from mysql.connector import Error
 
@@ -22,7 +22,7 @@ from prestamos_y_multas.multas_sql import TARIFA_MULTA_DIA
 
 
 class MenuMultas:
-    """Opción 5: generar multas, marcar como pagada y consultar historial/detalle."""
+    """Esta clase es la opcion 5: genera multas, marca como pagada y consulta historial y detalle."""
 
     def __init__(self, multas):
         self.multas = multas

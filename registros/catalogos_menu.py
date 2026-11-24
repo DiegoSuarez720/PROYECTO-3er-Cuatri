@@ -1,4 +1,4 @@
-"""Menú de catálogos auxiliares (Opción 6) y helpers de selección o alta al vuelo reutilizables."""
+"""Este archivo tiene el menu de catalogos (opcion 6) y funciones que se usan en otros menus para elegir o dar de alta datos."""
 
 from mysql.connector import Error
 
@@ -53,7 +53,7 @@ from nucleo.vistas import (
 
 
 def capturar_telefonos(entidad, telefonos_actuales=None):
-    """Captura al menos un teléfono válido con retroceso paso a paso y sin duplicados."""
+    """Pide al menos un telefono valido, deja regresar paso a paso y no acepta repetidos."""
     telefonos = list(telefonos_actuales) if telefonos_actuales else []
     while True:
         if not telefonos:
@@ -93,7 +93,7 @@ def capturar_telefonos(entidad, telefonos_actuales=None):
 def capturar_lista_asociada(
     etiqueta_otro, etiqueta_plural, fn_seleccionar, ids_actuales=None
 ):
-    """Captura 1 o más IDs (autores o editoriales) permitiendo retroceder paso a paso."""
+    """Pide uno o mas ID (autores o editoriales) y deja regresar paso a paso."""
     ids = list(ids_actuales) if ids_actuales else []
     if ids:
         print(f"\n{etiqueta_plural.capitalize()} seleccionados actualmente: {ids}")
@@ -781,7 +781,7 @@ def seleccionar_o_crear_usuario(catalogos):
 
 
 class MenuCatalogos:
-    """Opción 6: catálogos auxiliares (países, tipos, categorías, autores, editoriales, proveedores, localizaciones, usuarios, empleados)."""
+    """Esta clase es la opcion 6: catalogos de paises, tipos, categorias, autores, editoriales, proveedores, localizaciones, usuarios y empleados."""
 
     def __init__(self, catalogos):
         self.catalogos = catalogos

@@ -1,4 +1,5 @@
-"""Punto de entrada: AplicacionBiblioteca y Menú Principal (opciones 1 a 7 y 0)."""
+"""Archivo principal. Aqui arranca el programa: se conecta a la base de datos,
+pide el login y muestra el menu principal (opciones 1 a 7 y 0)."""
 
 from acceso.login_menu import iniciar_sesion
 from acceso.login_sql import GestorAuth
@@ -23,7 +24,7 @@ from registros.obras_sql import GestorObras
 
 
 class AplicacionBiblioteca:
-    """Controla el flujo de menús en terminal y delega cada opción a su módulo."""
+    """Clase principal. Aqui se ve el flujo de menus en la terminal y como cada opcion se manda a su archivo."""
 
     def __init__(self):
         self.auth = GestorAuth()
@@ -34,14 +35,14 @@ class AplicacionBiblioteca:
         self.multas = GestorMultas()
         self.empleado_activo = None
 
-        # Menús que no dependen del empleado en sesión
+        # Menus que no necesitan saber que empleado inicio sesion
         self.menu_obras = MenuObras(self.obras, self.catalogos)
         self.menu_multas = MenuMultas(self.multas)
         self.menu_catalogos = MenuCatalogos(self.catalogos)
         self.menu_listados = MenuListados(self.obras, self.prestamos, self.multas)
 
     def ejecutar(self):
-        """Punto de entrada del programa."""
+        """Inicia el programa: conecta, pide login y abre el menu principal."""
         try:
             ConexionDB().conectar()
         except ConnectionError as e:
@@ -60,7 +61,7 @@ class AplicacionBiblioteca:
             print("\nConexión cerrada. ¡Hasta luego!")
 
     # ==========================================================
-    # MENÚ PRINCIPAL
+    # MENU PRINCIPAL
     # ==========================================================
     def menu_principal(self):
         while True:
@@ -91,7 +92,7 @@ class AplicacionBiblioteca:
             elif opcion == 2:
                 self.menu_obras.flujo_asignar_localizacion()
             elif opcion == 3:
-                # El empleado en sesión se pasa en el momento de abrir el menú
+                # El empleado de la sesion se manda al abrir este menu
                 MenuPrestamos(
                     self.prestamos,
                     self.obras,

@@ -1,15 +1,14 @@
-"""Consultas SQL del inicio de sesión (tabla empleado).
-
-ÍNDICE (opción del menú -> método):
-  [LOGIN]  ->  iniciar_sesion()
-"""
+# En este archivo se ve la consulta SQL del inicio de sesion (tabla empleado).
+#
+# INDICE (opcion del menu -> metodo):
+#   [LOGIN]  -> iniciar_sesion()
 
 from nucleo.conexion import GestorBase
 from nucleo.modelos import Empleado
 
 
 class GestorAuth(GestorBase):
-    """Gestiona el inicio de sesión de empleados en texto plano."""
+    # Esta clase revisa el usuario y la contrasena del empleado (texto plano).
 
     # [LOGIN]
     def iniciar_sesion(self, nombre_user, contrasena):

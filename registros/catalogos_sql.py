@@ -1,16 +1,17 @@
-"""Consultas SQL de catálogos auxiliares (Opción 6 del menú principal).
-
-ÍNDICE (opción del menú -> método):
-  [OPCIÓN 6 -> 1]  PAISES: listar_paises, existe_pais, existe_pais_nombre, crear_pais
-  [OPCIÓN 6 -> 2]  TIPOS DE OBRA: listar_tipos, existe_tipo, existe_tipo_nombre, crear_tipo
-  [OPCIÓN 6 -> 3]  CATEGORIAS: listar_categorias, existe_categoria, existe_categoria_genero, crear_categoria
-  [OPCIÓN 6 -> 4]  AUTORES: listar_autores, existe_autor, existe_autor_nombre, crear_autor
-  [OPCIÓN 6 -> 5]  EDITORIALES: listar_editoriales, existe_editorial, existe_editorial_nombre, crear_editorial
-  [OPCIÓN 6 -> 6]  PROVEEDORES Y TELEFONOS: listar_proveedores, existe_proveedor, existe_telefono_proveedor, crear_proveedor, agregar_telefono_proveedor
-  [OPCIÓN 6 -> 7]  LOCALIZACIONES: listar_localizaciones, existe_localizacion, existe_localizacion_datos, crear_localizacion
-  [OPCIÓN 6 -> 8]  USUARIOS Y TELEFONOS: listar_usuarios, existe_usuario, existe_usuario_datos, existe_telefono_usuario, crear_usuario, agregar_telefono_usuario
-  [OPCIÓN 6 -> 9]  EMPLEADOS: listar_empleados, existe_empleado_user, crear_empleado
-"""
+# En este archivo se ven las consultas SQL de los catalogos auxiliares:
+# paises, tipos, categorias, autores, editoriales, proveedores,
+# localizaciones, usuarios y empleados (opcion 6 del menu principal).
+#
+# INDICE (opcion del menu -> metodos):
+#   [OPCION 6 -> 1]  PAISES: listar_paises, existe_pais, existe_pais_nombre, crear_pais
+#   [OPCION 6 -> 2]  TIPOS DE OBRA: listar_tipos, existe_tipo, existe_tipo_nombre, crear_tipo
+#   [OPCION 6 -> 3]  CATEGORIAS: listar_categorias, existe_categoria, existe_categoria_genero, crear_categoria
+#   [OPCION 6 -> 4]  AUTORES: listar_autores, existe_autor, existe_autor_nombre, crear_autor
+#   [OPCION 6 -> 5]  EDITORIALES: listar_editoriales, existe_editorial, existe_editorial_nombre, crear_editorial
+#   [OPCION 6 -> 6]  PROVEEDORES Y TELEFONOS: listar_proveedores, existe_proveedor, existe_telefono_proveedor, crear_proveedor, agregar_telefono_proveedor
+#   [OPCION 6 -> 7]  LOCALIZACIONES: listar_localizaciones, existe_localizacion, existe_localizacion_datos, crear_localizacion
+#   [OPCION 6 -> 8]  USUARIOS Y TELEFONOS: listar_usuarios, existe_usuario, existe_usuario_datos, existe_telefono_usuario, crear_usuario, agregar_telefono_usuario
+#   [OPCION 6 -> 9]  EMPLEADOS: listar_empleados, existe_empleado_user, crear_empleado
 
 from mysql.connector import Error
 
@@ -19,10 +20,11 @@ from nucleo.utilidades import normalizar_telefono
 
 
 class GestorCatalogos(GestorBase):
-    """Altas, listados y validadores de existencia / duplicados para todos los catálogos."""
+    # Esta clase tiene las altas, los listados y las revisiones de
+    # "ya existe" de todos los catalogos.
 
     # --- PAISES ---
-    # [OPCIÓN 6 -> 1]
+    # [OPCION 6 -> 1]
     def listar_paises(self):
         cursor = self.db.obtener_cursor()
         try:
@@ -31,28 +33,25 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 1]
+    # [OPCION 6 -> 1]
     def existe_pais(self, clave):
         cursor = self.db.obtener_cursor()
         try:
-            cursor.execute("SELECT 1 FROM pais WHERE UPPER(clave) = UPPER(%s)", (clave.strip(),))
+            cursor.execute("SELECT 1 FROM pais WHERE clave = %s", (clave.strip(),))
             return cursor.fetchone() is not None
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 1]
+    # [OPCION 6 -> 1]
     def existe_pais_nombre(self, nombre):
         cursor = self.db.obtener_cursor()
         try:
-            cursor.execute(
-                "SELECT 1 FROM pais WHERE LOWER(TRIM(nombre)) = LOWER(%s)",
-                (nombre.strip(),),
-            )
+            cursor.execute("SELECT 1 FROM pais WHERE nombre = %s", (nombre.strip(),))
             return cursor.fetchone() is not None
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 1]
+    # [OPCION 6 -> 1]
     def crear_pais(self, pais):
         if self.existe_pais(pais.clave):
             raise ValueError(f"Ya existe un país con la clave '{pais.clave}'.")
@@ -73,7 +72,7 @@ class GestorCatalogos(GestorBase):
             cursor.close()
 
     # --- TIPOS DE OBRA ---
-    # [OPCIÓN 6 -> 2]
+    # [OPCION 6 -> 2]
     def listar_tipos(self):
         cursor = self.db.obtener_cursor()
         try:
@@ -82,7 +81,7 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 2]
+    # [OPCION 6 -> 2]
     def existe_tipo(self, id_tipo):
         cursor = self.db.obtener_cursor()
         try:
@@ -91,19 +90,16 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 2]
+    # [OPCION 6 -> 2]
     def existe_tipo_nombre(self, tipo_obra):
         cursor = self.db.obtener_cursor()
         try:
-            cursor.execute(
-                "SELECT 1 FROM tipo WHERE LOWER(TRIM(tipo_obra)) = LOWER(%s)",
-                (tipo_obra.strip(),),
-            )
+            cursor.execute("SELECT 1 FROM tipo WHERE tipo_obra = %s", (tipo_obra.strip(),))
             return cursor.fetchone() is not None
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 2]
+    # [OPCION 6 -> 2]
     def crear_tipo(self, tipo):
         if self.existe_tipo_nombre(tipo.tipo_obra):
             raise ValueError(f"Ya existe un tipo de obra registrado como '{tipo.tipo_obra}'.")
@@ -121,7 +117,7 @@ class GestorCatalogos(GestorBase):
             cursor.close()
 
     # --- CATEGORIAS ---
-    # [OPCIÓN 6 -> 3]
+    # [OPCION 6 -> 3]
     def listar_categorias(self):
         cursor = self.db.obtener_cursor()
         try:
@@ -130,31 +126,25 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 3]
+    # [OPCION 6 -> 3]
     def existe_categoria(self, codigo):
         cursor = self.db.obtener_cursor()
         try:
-            cursor.execute(
-                "SELECT 1 FROM categoria WHERE UPPER(codigo) = UPPER(%s)",
-                (codigo.strip(),),
-            )
+            cursor.execute("SELECT 1 FROM categoria WHERE codigo = %s", (codigo.strip(),))
             return cursor.fetchone() is not None
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 3]
+    # [OPCION 6 -> 3]
     def existe_categoria_genero(self, genero):
         cursor = self.db.obtener_cursor()
         try:
-            cursor.execute(
-                "SELECT 1 FROM categoria WHERE LOWER(TRIM(genero)) = LOWER(%s)",
-                (genero.strip(),),
-            )
+            cursor.execute("SELECT 1 FROM categoria WHERE genero = %s", (genero.strip(),))
             return cursor.fetchone() is not None
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 3]
+    # [OPCION 6 -> 3]
     def crear_categoria(self, categoria):
         if self.existe_categoria(categoria.codigo):
             raise ValueError(f"Ya existe una categoría con el código '{categoria.codigo}'.")
@@ -175,7 +165,7 @@ class GestorCatalogos(GestorBase):
             cursor.close()
 
     # --- AUTORES ---
-    # [OPCIÓN 6 -> 4]
+    # [OPCION 6 -> 4]
     def listar_autores(self):
         cursor = self.db.obtener_cursor()
         try:
@@ -186,7 +176,7 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 4]
+    # [OPCION 6 -> 4]
     def existe_autor(self, num_id):
         cursor = self.db.obtener_cursor()
         try:
@@ -195,15 +185,15 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 4]
+    # [OPCION 6 -> 4]
     def existe_autor_nombre(self, nombre_pila, primer_ap, segundo_ap=None):
         cursor = self.db.obtener_cursor()
         try:
             sql = """
                 SELECT 1 FROM autor
-                WHERE LOWER(TRIM(nombre_pila)) = LOWER(%s)
-                  AND LOWER(TRIM(primer_ap)) = LOWER(%s)
-                  AND LOWER(TRIM(COALESCE(segundo_ap, ''))) = LOWER(%s)
+                WHERE nombre_pila = %s
+                  AND primer_ap = %s
+                  AND IFNULL(segundo_ap, '') = %s
             """
             cursor.execute(
                 sql,
@@ -213,7 +203,7 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 4]
+    # [OPCION 6 -> 4]
     def crear_autor(self, autor):
         if self.existe_autor_nombre(autor.nombre_pila, autor.primer_ap, autor.segundo_ap):
             raise ValueError(f"Ya existe un autor registrado como '{autor.nombre_completo}'.")
@@ -234,22 +224,22 @@ class GestorCatalogos(GestorBase):
             cursor.close()
 
     # --- EDITORIALES ---
-    # [OPCIÓN 6 -> 5]
+    # [OPCION 6 -> 5]
     def listar_editoriales(self):
         cursor = self.db.obtener_cursor()
         try:
             sql = """
-                SELECT e.id_editorial, e.nombre, e.pais, p.nombre AS nombre_pais
-                FROM editorial e
-                INNER JOIN pais p ON e.pais = p.clave
-                ORDER BY e.id_editorial
+                SELECT ed.id_editorial, ed.nombre, ed.pais, pa.nombre AS nombre_pais
+                FROM editorial AS ed
+                INNER JOIN pais AS pa ON ed.pais = pa.clave
+                ORDER BY ed.id_editorial
             """
             cursor.execute(sql)
             return cursor.fetchall()
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 5]
+    # [OPCION 6 -> 5]
     def existe_editorial(self, id_editorial):
         cursor = self.db.obtener_cursor()
         try:
@@ -258,21 +248,21 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 5]
+    # [OPCION 6 -> 5]
     def existe_editorial_nombre(self, nombre, pais):
         cursor = self.db.obtener_cursor()
         try:
             sql = """
                 SELECT 1 FROM editorial
-                WHERE LOWER(TRIM(nombre)) = LOWER(%s)
-                  AND UPPER(pais) = UPPER(%s)
+                WHERE nombre = %s
+                  AND pais = %s
             """
             cursor.execute(sql, (nombre.strip(), pais.strip()))
             return cursor.fetchone() is not None
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 5]
+    # [OPCION 6 -> 5]
     def crear_editorial(self, editorial):
         if self.existe_editorial_nombre(editorial.nombre, editorial.pais):
             raise ValueError(
@@ -295,40 +285,52 @@ class GestorCatalogos(GestorBase):
             cursor.close()
 
     # --- PROVEEDORES Y TELEFONOS ---
-    # [OPCIÓN 6 -> 6]
+    # [OPCION 6 -> 6]
     def listar_proveedores(self):
+        # Se hacen dos consultas: una de proveedores y otra de telefonos.
+        # Los telefonos se unen en Python.
         cursor = self.db.obtener_cursor()
         try:
-            sql = """
-                SELECT pr.RFC, pr.nombre_empresa,
-                       GROUP_CONCAT(tp.telefono SEPARATOR ', ') AS telefonos
-                FROM proveedor pr
-                LEFT JOIN telefono_proveedor tp ON pr.RFC = tp.proveedor
-                GROUP BY pr.RFC, pr.nombre_empresa
-                ORDER BY pr.RFC
-            """
-            cursor.execute(sql)
-            return cursor.fetchall()
+            cursor.execute(
+                "SELECT RFC, nombre_empresa FROM proveedor ORDER BY RFC"
+            )
+            proveedores = cursor.fetchall()
+
+            cursor.execute(
+                """
+                SELECT prov.RFC, telprov.telefono
+                FROM proveedor AS prov
+                INNER JOIN telefono_proveedor AS telprov ON prov.RFC = telprov.proveedor
+                """
+            )
+            telefonos_por_rfc = {}
+            for fila in cursor.fetchall():
+                telefonos_por_rfc.setdefault(fila["RFC"], []).append(fila["telefono"])
+
+            for prov in proveedores:
+                lista = telefonos_por_rfc.get(prov["RFC"])
+                prov["telefonos"] = ", ".join(lista) if lista else None
+            return proveedores
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 6]
+    # [OPCION 6 -> 6]
     def existe_proveedor(self, rfc):
         cursor = self.db.obtener_cursor()
         try:
-            cursor.execute("SELECT 1 FROM proveedor WHERE UPPER(RFC) = UPPER(%s)", (rfc.strip(),))
+            cursor.execute("SELECT 1 FROM proveedor WHERE RFC = %s", (rfc.strip(),))
             return cursor.fetchone() is not None
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 6]
+    # [OPCION 6 -> 6]
     def existe_telefono_proveedor(self, rfc, telefono):
-        """Detecta duplicados comparando solo dígitos (ignora guiones o espacios)."""
+        # Compara solo los digitos (ignora guiones o espacios)
         objetivo = normalizar_telefono(telefono)
         cursor = self.db.obtener_cursor()
         try:
             cursor.execute(
-                "SELECT telefono FROM telefono_proveedor WHERE UPPER(proveedor) = UPPER(%s)",
+                "SELECT telefono FROM telefono_proveedor WHERE proveedor = %s",
                 (rfc.strip(),),
             )
             existentes = cursor.fetchall()
@@ -336,7 +338,7 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 6]
+    # [OPCION 6 -> 6]
     def crear_proveedor(self, proveedor):
         if self.existe_proveedor(proveedor.rfc):
             raise ValueError(f"Ya existe un proveedor registrado con el RFC '{proveedor.rfc}'.")
@@ -367,7 +369,7 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 6]
+    # [OPCION 6 -> 6]
     def agregar_telefono_proveedor(self, rfc, telefono):
         if self.existe_telefono_proveedor(rfc, telefono):
             raise ValueError("Ese teléfono ya está registrado para este proveedor.")
@@ -386,7 +388,7 @@ class GestorCatalogos(GestorBase):
             cursor.close()
 
     # --- LOCALIZACIONES ---
-    # [OPCIÓN 6 -> 7]
+    # [OPCION 6 -> 7]
     def listar_localizaciones(self):
         cursor = self.db.obtener_cursor()
         try:
@@ -400,7 +402,7 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 7]
+    # [OPCION 6 -> 7]
     def existe_localizacion(self, id_localizacion):
         cursor = self.db.obtener_cursor()
         try:
@@ -412,13 +414,13 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 7]
+    # [OPCION 6 -> 7]
     def existe_localizacion_datos(self, seccion, pasillo, estante):
         cursor = self.db.obtener_cursor()
         try:
             sql = """
                 SELECT 1 FROM localizacion
-                WHERE LOWER(TRIM(seccion)) = LOWER(%s)
+                WHERE seccion = %s
                   AND pasillo = %s
                   AND estante = %s
             """
@@ -427,7 +429,7 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 7]
+    # [OPCION 6 -> 7]
     def crear_localizacion(self, loc):
         if self.existe_localizacion_datos(loc.seccion, loc.pasillo, loc.estante):
             raise ValueError(
@@ -451,26 +453,40 @@ class GestorCatalogos(GestorBase):
             cursor.close()
 
     # --- USUARIOS Y TELEFONOS ---
-    # [OPCIÓN 6 -> 8]
+    # [OPCION 6 -> 8]
     def listar_usuarios(self):
+        # Se hacen dos consultas: una de usuarios y otra de telefonos.
+        # Los telefonos se unen en Python.
         cursor = self.db.obtener_cursor()
         try:
             sql = """
-                SELECT u.id_usuario, u.nombre_pila, u.primer_ap, u.segundo_ap,
-                       u.dir_calle, u.dir_numero, u.dir_colonia,
-                       GROUP_CONCAT(tu.num_tel SEPARATOR ', ') AS telefonos
-                FROM usuario u
-                LEFT JOIN telefono_usuario tu ON u.id_usuario = tu.usuario
-                GROUP BY u.id_usuario, u.nombre_pila, u.primer_ap, u.segundo_ap,
-                         u.dir_calle, u.dir_numero, u.dir_colonia
-                ORDER BY u.id_usuario
+                SELECT id_usuario, nombre_pila, primer_ap, segundo_ap,
+                       dir_calle, dir_numero, dir_colonia
+                FROM usuario
+                ORDER BY id_usuario
             """
             cursor.execute(sql)
-            return cursor.fetchall()
+            usuarios = cursor.fetchall()
+
+            cursor.execute(
+                """
+                SELECT us.id_usuario, telus.num_tel
+                FROM usuario AS us
+                INNER JOIN telefono_usuario AS telus ON us.id_usuario = telus.usuario
+                """
+            )
+            telefonos_por_usuario = {}
+            for fila in cursor.fetchall():
+                telefonos_por_usuario.setdefault(fila["id_usuario"], []).append(fila["num_tel"])
+
+            for usu in usuarios:
+                lista = telefonos_por_usuario.get(usu["id_usuario"])
+                usu["telefonos"] = ", ".join(lista) if lista else None
+            return usuarios
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 8]
+    # [OPCION 6 -> 8]
     def existe_usuario(self, id_usuario):
         cursor = self.db.obtener_cursor()
         try:
@@ -479,7 +495,7 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 8]
+    # [OPCION 6 -> 8]
     def existe_usuario_datos(
         self, nombre_pila, primer_ap, segundo_ap, dir_calle, dir_numero, dir_colonia
     ):
@@ -487,12 +503,12 @@ class GestorCatalogos(GestorBase):
         try:
             sql = """
                 SELECT 1 FROM usuario
-                WHERE LOWER(TRIM(nombre_pila)) = LOWER(%s)
-                  AND LOWER(TRIM(primer_ap)) = LOWER(%s)
-                  AND LOWER(TRIM(COALESCE(segundo_ap, ''))) = LOWER(%s)
-                  AND LOWER(TRIM(dir_calle)) = LOWER(%s)
-                  AND LOWER(TRIM(dir_numero)) = LOWER(%s)
-                  AND LOWER(TRIM(dir_colonia)) = LOWER(%s)
+                WHERE nombre_pila = %s
+                  AND primer_ap = %s
+                  AND IFNULL(segundo_ap, '') = %s
+                  AND dir_calle = %s
+                  AND dir_numero = %s
+                  AND dir_colonia = %s
             """
             cursor.execute(
                 sql,
@@ -509,9 +525,9 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 8]
+    # [OPCION 6 -> 8]
     def existe_telefono_usuario(self, id_usuario, num_tel):
-        """Detecta duplicados comparando solo dígitos (ignora guiones o espacios)."""
+        # Compara solo los digitos (ignora guiones o espacios)
         objetivo = normalizar_telefono(num_tel)
         cursor = self.db.obtener_cursor()
         try:
@@ -524,7 +540,7 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 8]
+    # [OPCION 6 -> 8]
     def crear_usuario(self, usuario):
         if self.existe_usuario_datos(
             usuario.nombre_pila,
@@ -578,7 +594,7 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 8]
+    # [OPCION 6 -> 8]
     def agregar_telefono_usuario(self, id_usuario, num_tel):
         if self.existe_telefono_usuario(id_usuario, num_tel):
             raise ValueError("Ese teléfono ya está registrado para este usuario.")
@@ -597,7 +613,7 @@ class GestorCatalogos(GestorBase):
             cursor.close()
 
     # --- EMPLEADOS ---
-    # [OPCIÓN 6 -> 9]
+    # [OPCION 6 -> 9]
     def listar_empleados(self):
         cursor = self.db.obtener_cursor()
         try:
@@ -611,19 +627,19 @@ class GestorCatalogos(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 9]
+    # [OPCION 6 -> 9]
     def existe_empleado_user(self, nombre_user):
         cursor = self.db.obtener_cursor()
         try:
             cursor.execute(
-                "SELECT 1 FROM empleado WHERE LOWER(TRIM(nombre_user)) = LOWER(%s)",
+                "SELECT 1 FROM empleado WHERE nombre_user = %s",
                 (nombre_user.strip(),),
             )
             return cursor.fetchone() is not None
         finally:
             cursor.close()
 
-    # [OPCIÓN 6 -> 9]
+    # [OPCION 6 -> 9]
     def crear_empleado(self, empleado):
         if self.existe_empleado_user(empleado.nombre_user):
             raise ValueError(f"Ya existe un empleado con el usuario '{empleado.nombre_user}'.")

@@ -1,18 +1,18 @@
-"""Consultas SQL de obras, ejemplares y localización (Opciones 1 y 2; también alimenta 3 y 7).
-
-ÍNDICE (opción del menú -> método):
-  [OPCIÓN 1 -> 2 | OPCIÓN 1 -> 3 | OPCIÓN 2 | OPCIÓN 7 -> 1]  ->  listar_obras()
-  [OPCIÓN 1 -> 2]  ->  obtener_obra()
-  [OPCIÓN 3 -> 1]  ->  obtener_fecha_primera_adquisicion()
-  [OPCIÓN 1 -> 3]  ->  consultar_obra_completa()
-  [OPCIÓN 1 -> 1 | OPCIÓN 3 -> 1]  ->  existe_obra()
-  [OPCIÓN 1 -> 1 | OPCIÓN 1 -> 2]  ->  obtener_localizacion_base()
-  [OPCIÓN 1 -> 1]  ->  registrar_obra_completa()
-  [OPCIÓN 1 -> 2]  ->  abastecer_obra_existente()
-  [OPCIÓN 2]  ->  listar_ejemplares_obra()
-  [OPCIÓN 2]  ->  asignar_localizacion_ejemplar()
-  [OPCIÓN 2]  ->  asignar_localizacion_todos()
-"""
+# En este archivo se ven las consultas SQL de obras, ejemplares y localizacion
+# (opciones 1 y 2 del menu; tambien se usan en las opciones 3 y 7).
+#
+# INDICE (opcion del menu -> metodo):
+#   [OPCION 1 -> 2 | OPCION 1 -> 3 | OPCION 2 | OPCION 7 -> 1]  ->  listar_obras()
+#   [OPCION 1 -> 2]  ->  obtener_obra()
+#   [OPCION 3 -> 1]  ->  obtener_fecha_primera_adquisicion()
+#   [OPCION 1 -> 3]  ->  consultar_obra_completa()
+#   [OPCION 1 -> 1 | OPCION 3 -> 1]  ->  existe_obra()
+#   [OPCION 1 -> 1 | OPCION 1 -> 2]  ->  obtener_localizacion_base()
+#   [OPCION 1 -> 1]  ->  registrar_obra_completa()
+#   [OPCION 1 -> 2]  ->  abastecer_obra_existente()
+#   [OPCION 2]  ->  listar_ejemplares_obra()
+#   [OPCION 2]  ->  asignar_localizacion_ejemplar()
+#   [OPCION 2]  ->  asignar_localizacion_todos()
 
 from datetime import date
 from mysql.connector import Error
@@ -22,34 +22,40 @@ from nucleo.utilidades import formatear_fecha
 
 
 class GestorObras(GestorBase):
-    """Obras, abastecimiento, ejemplares, localizaciones y ficha completa de obra."""
+    # Esta clase maneja obras, abastecimiento, ejemplares y localizaciones.
 
-    # [OPCIÓN 1 -> 2 | OPCIÓN 1 -> 3 | OPCIÓN 2 | OPCIÓN 7 -> 1]
+    # [OPCION 1 -> 2 | OPCION 1 -> 3 | OPCION 2 | OPCION 7 -> 1]
     def listar_obras(self):
+        # Se hacen 3 consultas sencillas y se juntan los resultados en Python
         cursor = self.db.obtener_cursor()
         try:
             sql = """
-                SELECT o.isbn, o.titulo, o.subtitulo, o.`año_publicacion` AS anio,
-                       t.tipo_obra, c.genero,
-                       COUNT(DISTINCT e.ejemplar) AS total_ejemplares,
-                       COUNT(DISTINCT ao.autor) AS total_autores
-                FROM obra o
-                INNER JOIN tipo t ON o.tipo = t.id_tipo
-                INNER JOIN categoria c ON o.categoria = c.codigo
-                LEFT JOIN ejemplar e ON o.isbn = e.obra
-                LEFT JOIN autor_obra ao ON o.isbn = ao.obra
-                GROUP BY o.isbn, o.titulo, o.subtitulo, o.`año_publicacion`,
-                         t.tipo_obra, c.genero
-                ORDER BY o.titulo
+                SELECT ob.isbn, ob.titulo, ob.subtitulo, ob.`año_publicacion` AS anio,
+                       tip.tipo_obra, cat.genero
+                FROM obra AS ob
+                INNER JOIN tipo AS tip ON ob.tipo = tip.id_tipo
+                INNER JOIN categoria AS cat ON ob.categoria = cat.codigo
+                ORDER BY ob.titulo
             """
             cursor.execute(sql)
-            return cursor.fetchall()
+            obras = cursor.fetchall()
+
+            cursor.execute("SELECT obra, COUNT(*) AS total FROM ejemplar GROUP BY obra")
+            ejemplares_por_obra = {f["obra"]: f["total"] for f in cursor.fetchall()}
+
+            cursor.execute("SELECT obra, COUNT(*) AS total FROM autor_obra GROUP BY obra")
+            autores_por_obra = {f["obra"]: f["total"] for f in cursor.fetchall()}
+
+            for obra in obras:
+                obra["total_ejemplares"] = ejemplares_por_obra.get(obra["isbn"], 0)
+                obra["total_autores"] = autores_por_obra.get(obra["isbn"], 0)
+            return obras
         finally:
             cursor.close()
 
-    # [OPCIÓN 1 -> 2]
+    # [OPCION 1 -> 2]
     def obtener_obra(self, isbn):
-        """Obtiene datos básicos de una obra (incluyendo su año de publicación)."""
+        # Datos basicos de una obra (con su anio de publicacion)
         cursor = self.db.obtener_cursor()
         try:
             cursor.execute(
@@ -60,9 +66,9 @@ class GestorObras(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 3 -> 1]
+    # [OPCION 3 -> 1]
     def obtener_fecha_primera_adquisicion(self, isbn):
-        """Devuelve la fecha más antigua en que se adquirió la obra."""
+        # Fecha mas antigua en que se compro la obra
         cursor = self.db.obtener_cursor()
         try:
             cursor.execute(
@@ -74,39 +80,43 @@ class GestorObras(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 1 -> 3]
+    # [OPCION 1 -> 3]
     def consultar_obra_completa(self, isbn):
-        """Obtiene toda la información de una obra (ISBN, título, subtítulo, tipo, año, editorial, país y autores)."""
+        # Toda la informacion de una obra: tipo, categoria, editorial, pais y autores
         cursor = self.db.obtener_cursor()
         try:
             sql = """
-                SELECT o.isbn,
-                       o.titulo,
-                       o.subtitulo,
-                       t.tipo_obra,
-                       o.`año_publicacion` AS anio_publicacion,
-                       c.genero,
-                       o.num_paginas,
+                SELECT ob.isbn,
+                       ob.titulo,
+                       ob.subtitulo,
+                       tip.tipo_obra,
+                       ob.`año_publicacion` AS anio_publicacion,
+                       cat.genero,
+                       ob.num_paginas,
                        ed.nombre AS editorial,
                        pa.nombre AS pais,
-                       CONCAT_WS(' ', a.nombre_pila, a.primer_ap, a.segundo_ap) AS autor
-                FROM obra AS o
-                INNER JOIN tipo AS t ON o.tipo = t.id_tipo
-                INNER JOIN categoria AS c ON o.categoria = c.codigo
-                INNER JOIN obra_editorial AS oe ON oe.obra = o.isbn
-                INNER JOIN editorial AS ed ON oe.editorial = ed.id_editorial
+                       CONCAT(aut.nombre_pila, ' ', aut.primer_ap, ' ', IFNULL(aut.segundo_ap, '')) AS autor
+                FROM obra AS ob
+                INNER JOIN tipo AS tip ON ob.tipo = tip.id_tipo
+                INNER JOIN categoria AS cat ON ob.categoria = cat.codigo
+                INNER JOIN obra_editorial AS obraed ON obraed.obra = ob.isbn
+                INNER JOIN editorial AS ed ON obraed.editorial = ed.id_editorial
                 INNER JOIN pais AS pa ON ed.pais = pa.clave
-                INNER JOIN autor_obra AS ao ON ao.obra = o.isbn
-                INNER JOIN autor AS a ON ao.autor = a.num_id
-                WHERE o.isbn = %s
+                INNER JOIN autor_obra AS autobra ON autobra.obra = ob.isbn
+                INNER JOIN autor AS aut ON autobra.autor = aut.num_id
+                WHERE ob.isbn = %s
                 ORDER BY autor, ed.nombre
             """
             cursor.execute(sql, (isbn,))
-            return cursor.fetchall()
+            filas = cursor.fetchall()
+            # Se quita el espacio del final cuando no hay segundo apellido
+            for fila in filas:
+                fila["autor"] = fila["autor"].strip()
+            return filas
         finally:
             cursor.close()
 
-    # [OPCIÓN 1 -> 1 | OPCIÓN 3 -> 1]
+    # [OPCION 1 -> 1 | OPCION 3 -> 1]
     def existe_obra(self, isbn):
         cursor = self.db.obtener_cursor()
         try:
@@ -115,9 +125,9 @@ class GestorObras(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 1 -> 1 | OPCIÓN 1 -> 2]
+    # [OPCION 1 -> 1 | OPCION 1 -> 2]
     def obtener_localizacion_base(self):
-        """Obtiene el primer id_localizacion disponible (por defecto 'Sin asignar / Recepcion')."""
+        # Primer id_localizacion que exista (por defecto 'Sin asignar / Recepcion')
         cursor = self.db.obtener_cursor()
         try:
             cursor.execute("SELECT MIN(id_localizacion) AS id_loc FROM localizacion")
@@ -131,11 +141,11 @@ class GestorObras(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 1 -> 1]
+    # [OPCION 1 -> 1]
     def registrar_obra_completa(
         self, obra, rfc_proveedor, fecha_adquisicion, cantidad, id_localizacion=None
     ):
-        """Inserta obra, autores, editoriales, abastecimiento y N ejemplares validando fechas y rangos."""
+        # Guarda la obra, sus autores, editoriales, el abastecimiento y los ejemplares
         hoy = date.today()
         if obra.anio_publicacion < 1450 or obra.anio_publicacion > hoy.year:
             raise ValueError(f"El año de publicación debe estar entre 1450 y {hoy.year}.")
@@ -210,11 +220,11 @@ class GestorObras(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 1 -> 2]
+    # [OPCION 1 -> 2]
     def abastecer_obra_existente(
         self, isbn, rfc_proveedor, fecha_adquisicion, cantidad, id_localizacion=None
     ):
-        """Agrega más ejemplares a una obra existente validando fecha contra publicación y hoy."""
+        # Agrega mas ejemplares a una obra que ya existe
         hoy = date.today()
         if cantidad <= 0 or cantidad > 500:
             raise ValueError("La cantidad debe estar entre 1 y 500 ejemplares.")
@@ -258,7 +268,7 @@ class GestorObras(GestorBase):
                 )
 
             cursor.execute(
-                "SELECT COALESCE(MAX(ejemplar), 0) AS ultimo FROM ejemplar WHERE obra = %s",
+                "SELECT IFNULL(MAX(ejemplar), 0) AS ultimo FROM ejemplar WHERE obra = %s",
                 (isbn,),
             )
             ultimo = cursor.fetchone()["ultimo"]
@@ -279,40 +289,52 @@ class GestorObras(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 2]
+    # [OPCION 2]
     def listar_ejemplares_obra(self, isbn):
+        # Se consultan los ejemplares, los prestamos y las devoluciones por separado
         cursor = self.db.obtener_cursor()
         try:
             sql = """
-                SELECT e.obra, e.ejemplar, e.localizacion,
-                       l.seccion, l.pasillo, l.estante,
-                       CASE
-                           WHEN EXISTS (
-                               SELECT 1
-                               FROM prestamo_ejemplar pe
-                               LEFT JOIN devolucion d
-                                 ON d.obra = pe.obra
-                                AND d.ejemplar = pe.ejemplar
-                                AND d.prestamo = pe.prestamo
-                               WHERE pe.obra = e.obra
-                                 AND pe.ejemplar = e.ejemplar
-                                 AND d.id_devolucion IS NULL
-                           ) THEN 'Prestado'
-                           ELSE 'Disponible'
-                       END AS estado
-                FROM ejemplar e
-                INNER JOIN localizacion l ON e.localizacion = l.id_localizacion
-                WHERE e.obra = %s
-                ORDER BY e.ejemplar
+                SELECT ej.obra, ej.ejemplar, ej.localizacion,
+                       loc.seccion, loc.pasillo, loc.estante
+                FROM ejemplar AS ej
+                INNER JOIN localizacion AS loc ON ej.localizacion = loc.id_localizacion
+                WHERE ej.obra = %s
+                ORDER BY ej.ejemplar
             """
             cursor.execute(sql, (isbn,))
-            return cursor.fetchall()
+            ejemplares = cursor.fetchall()
+
+            cursor.execute(
+                "SELECT obra, ejemplar, prestamo FROM prestamo_ejemplar WHERE obra = %s",
+                (isbn,),
+            )
+            prestamos = cursor.fetchall()
+
+            cursor.execute(
+                "SELECT obra, ejemplar, prestamo FROM devolucion WHERE obra = %s",
+                (isbn,),
+            )
+            devueltos = set((f["obra"], f["ejemplar"], f["prestamo"]) for f in cursor.fetchall())
+
+            # Un ejemplar esta prestado si tiene un prestamo sin devolucion
+            prestados = set()
+            for pres in prestamos:
+                if (pres["obra"], pres["ejemplar"], pres["prestamo"]) not in devueltos:
+                    prestados.add((pres["obra"], pres["ejemplar"]))
+
+            for ej in ejemplares:
+                if (ej["obra"], ej["ejemplar"]) in prestados:
+                    ej["estado"] = "Prestado"
+                else:
+                    ej["estado"] = "Disponible"
+            return ejemplares
         finally:
             cursor.close()
 
-    # [OPCIÓN 2]
+    # [OPCION 2]
     def asignar_localizacion_ejemplar(self, isbn, num_ejemplar, id_localizacion):
-        """Actualiza la localización de un ejemplar específico."""
+        # Cambia la localizacion de un ejemplar
         cursor = self.db.obtener_cursor()
         try:
             cursor.execute(
@@ -328,9 +350,9 @@ class GestorObras(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 2]
+    # [OPCION 2]
     def asignar_localizacion_todos(self, isbn, id_localizacion):
-        """Asigna la misma localización a todos los ejemplares de una obra."""
+        # Pone la misma localizacion a todos los ejemplares de una obra
         cursor = self.db.obtener_cursor()
         try:
             cursor.execute(

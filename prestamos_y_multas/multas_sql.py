@@ -1,13 +1,13 @@
-"""Consultas SQL de multas (Opción 5; también alimenta Opciones 3 y 7).
-
-ÍNDICE (opción del menú -> método):
-  [OPCIÓN 3 -> 1]  ->  contar_multas_pendientes_usuario()
-  [OPCIÓN 5 -> 1]  ->  generar_multas_automaticas()
-  [OPCIÓN 5 -> 2 | OPCIÓN 5 -> 3 | OPCIÓN 7 -> 4]  ->  listar_multas()
-  [OPCIÓN 5 -> 3]  ->  consultar_detalle_multa()
-  [OPCIÓN 5 -> 2]  ->  obtener_multa()
-  [OPCIÓN 5 -> 2]  ->  marcar_pagada()
-"""
+# En este archivo se ven las consultas SQL de multas (opcion 5 del menu;
+# tambien se usan en las opciones 3 y 7).
+#
+# INDICE (opcion del menu -> metodo):
+#   [OPCION 3 -> 1]  ->  contar_multas_pendientes_usuario()
+#   [OPCION 5 -> 1]  ->  generar_multas_automaticas()
+#   [OPCION 5 -> 2 | OPCION 5 -> 3 | OPCION 7 -> 4]  ->  listar_multas()
+#   [OPCION 5 -> 3]  ->  consultar_detalle_multa()
+#   [OPCION 5 -> 2]  ->  obtener_multa()
+#   [OPCION 5 -> 2]  ->  marcar_pagada()
 
 from decimal import Decimal
 from mysql.connector import Error
@@ -15,24 +15,24 @@ from mysql.connector import Error
 from nucleo.conexion import GestorBase
 
 
-# Tarifa fija diaria por retraso en devolución
+# Cobro fijo por cada dia de retraso
 TARIFA_MULTA_DIA = Decimal("15.00")
 
 
 class GestorMultas(GestorBase):
-    """Sincronización automática, consulta detallada y pago de multas (entidad débil: columna multa)."""
+    # Esta clase crea multas, las consulta y las marca como pagadas.
 
-    # [OPCIÓN 3 -> 1]
+    # [OPCION 3 -> 1]
     def contar_multas_pendientes_usuario(self, id_usuario):
-        """Devuelve (cantidad, monto_total) de multas pendientes de un usuario."""
+        # Regresa (cantidad, monto_total) de multas pendientes de un usuario
         cursor = self.db.obtener_cursor()
         try:
             sql = """
-                SELECT COUNT(*) AS cantidad, COALESCE(SUM(m.total), 0) AS total
-                FROM multa AS m
-                INNER JOIN devolucion AS d ON m.devolucion = d.id_devolucion
-                INNER JOIN prestamo AS p ON d.prestamo = p.folio
-                WHERE p.usuario = %s AND m.estado = 'Pendiente'
+                SELECT COUNT(*) AS cantidad, IFNULL(SUM(mul.total), 0) AS total
+                FROM multa AS mul
+                INNER JOIN devolucion AS dev ON mul.devolucion = dev.id_devolucion
+                INNER JOIN prestamo AS pres ON dev.prestamo = pres.folio
+                WHERE pres.usuario = %s AND mul.estado = 'Pendiente'
             """
             cursor.execute(sql, (id_usuario,))
             fila = cursor.fetchone()
@@ -40,28 +40,33 @@ class GestorMultas(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 5 -> 1]
+    # [OPCION 5 -> 1]
     def generar_multas_automaticas(self, monto_dia=TARIFA_MULTA_DIA):
-        """Genera automáticamente multas faltantes para devoluciones tardías sin multa."""
+        # Crea las multas que faltan para devoluciones con retraso
         cursor = self.db.obtener_cursor()
         try:
-            sql_pend = """
-                SELECT d.id_devolucion, d.prestamo, d.obra, d.ejemplar,
-                       DATEDIFF(d.fecha_devolucion, p.fecha_limite) AS dias_retraso
-                FROM devolucion d
-                INNER JOIN prestamo p ON d.prestamo = p.folio
-                LEFT JOIN multa m ON m.devolucion = d.id_devolucion
-                WHERE d.fecha_devolucion > p.fecha_limite
-                  AND m.multa IS NULL
-                ORDER BY d.id_devolucion
+            # Devoluciones hechas despues de la fecha limite
+            sql_tarde = """
+                SELECT dev.id_devolucion, dev.prestamo, dev.obra, dev.ejemplar,
+                       dev.fecha_devolucion, pres.fecha_limite
+                FROM devolucion AS dev
+                INNER JOIN prestamo AS pres ON dev.prestamo = pres.folio
+                WHERE dev.fecha_devolucion > pres.fecha_limite
+                ORDER BY dev.id_devolucion
             """
-            cursor.execute(sql_pend)
-            pendientes = cursor.fetchall()
+            cursor.execute(sql_tarde)
+            tardias = cursor.fetchall()
+
+            # Devoluciones que ya tienen multa
+            cursor.execute("SELECT devolucion FROM multa")
+            con_multa = set(f["devolucion"] for f in cursor.fetchall())
+
+            pendientes = [d for d in tardias if d["id_devolucion"] not in con_multa]
 
             creadas = []
             tarifa = Decimal(str(monto_dia)).quantize(Decimal("0.01"))
             for item in pendientes:
-                dias = item["dias_retraso"]
+                dias = (item["fecha_devolucion"] - item["fecha_limite"]).days
                 total = (tarifa * dias).quantize(Decimal("0.01"))
                 cursor.execute(
                     """
@@ -89,73 +94,79 @@ class GestorMultas(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 5 -> 2 | OPCIÓN 5 -> 3 | OPCIÓN 7 -> 4]
+    # [OPCION 5 -> 2 | OPCION 5 -> 3 | OPCION 7 -> 4]
     def listar_multas(self, solo_pendientes=False):
-        """Lista el historial de multas con resumen compacto."""
+        # Lista de multas con un resumen corto
         cursor = self.db.obtener_cursor()
         try:
             sql = """
-                SELECT m.multa AS id_multa,
-                       d.prestamo,
-                       p.fecha_salida,
-                       CONCAT_WS(' ', u.nombre_pila, u.primer_ap, u.segundo_ap) AS usuario,
-                       d.obra,
-                       o.titulo,
-                       o.subtitulo,
-                       d.ejemplar,
-                       p.fecha_limite,
-                       d.fecha_devolucion,
-                       m.dias_retraso,
-                       m.monto_dia,
-                       m.total,
-                       m.estado
-                FROM multa AS m
-                INNER JOIN devolucion AS d ON m.devolucion = d.id_devolucion
-                INNER JOIN prestamo AS p ON d.prestamo = p.folio
-                INNER JOIN usuario AS u ON p.usuario = u.id_usuario
-                INNER JOIN obra AS o ON d.obra = o.isbn
+                SELECT mul.multa AS id_multa,
+                       dev.prestamo,
+                       pres.fecha_salida,
+                       CONCAT(us.nombre_pila, ' ', us.primer_ap, ' ', IFNULL(us.segundo_ap, '')) AS usuario,
+                       dev.obra,
+                       ob.titulo,
+                       ob.subtitulo,
+                       dev.ejemplar,
+                       pres.fecha_limite,
+                       dev.fecha_devolucion,
+                       mul.dias_retraso,
+                       mul.monto_dia,
+                       mul.total,
+                       mul.estado
+                FROM multa AS mul
+                INNER JOIN devolucion AS dev ON mul.devolucion = dev.id_devolucion
+                INNER JOIN prestamo AS pres ON dev.prestamo = pres.folio
+                INNER JOIN usuario AS us ON pres.usuario = us.id_usuario
+                INNER JOIN obra AS ob ON dev.obra = ob.isbn
             """
             if solo_pendientes:
-                sql += " WHERE m.estado = 'Pendiente'"
-            sql += " ORDER BY m.multa"
+                sql += " WHERE mul.estado = 'Pendiente'"
+            sql += " ORDER BY mul.multa"
             cursor.execute(sql)
-            return cursor.fetchall()
+            filas = cursor.fetchall()
+            for fila in filas:
+                fila["usuario"] = fila["usuario"].strip()
+            return filas
         finally:
             cursor.close()
 
-    # [OPCIÓN 5 -> 3]
+    # [OPCION 5 -> 3]
     def consultar_detalle_multa(self, id_multa):
-        """Obtiene los 13 datos completos de una multa generada (más su estado)."""
+        # Datos completos de una multa (con su estado)
         cursor = self.db.obtener_cursor()
         try:
             sql = """
-                SELECT m.multa AS id_multa,
-                       p.folio AS prestamo,
-                       p.fecha_salida,
-                       CONCAT_WS(' ', u.nombre_pila, u.primer_ap, u.segundo_ap) AS usuario,
-                       o.isbn,
-                       o.titulo,
-                       o.subtitulo,
-                       d.ejemplar,
-                       p.fecha_limite,
-                       d.fecha_devolucion,
-                       m.dias_retraso,
-                       m.monto_dia,
-                       m.total,
-                       m.estado
-                FROM multa AS m
-                INNER JOIN devolucion AS d ON m.devolucion = d.id_devolucion
-                INNER JOIN prestamo AS p ON d.prestamo = p.folio
-                INNER JOIN usuario AS u ON p.usuario = u.id_usuario
-                INNER JOIN obra AS o ON d.obra = o.isbn
-                WHERE m.multa = %s
+                SELECT mul.multa AS id_multa,
+                       pres.folio AS prestamo,
+                       pres.fecha_salida,
+                       CONCAT(us.nombre_pila, ' ', us.primer_ap, ' ', IFNULL(us.segundo_ap, '')) AS usuario,
+                       ob.isbn,
+                       ob.titulo,
+                       ob.subtitulo,
+                       dev.ejemplar,
+                       pres.fecha_limite,
+                       dev.fecha_devolucion,
+                       mul.dias_retraso,
+                       mul.monto_dia,
+                       mul.total,
+                       mul.estado
+                FROM multa AS mul
+                INNER JOIN devolucion AS dev ON mul.devolucion = dev.id_devolucion
+                INNER JOIN prestamo AS pres ON dev.prestamo = pres.folio
+                INNER JOIN usuario AS us ON pres.usuario = us.id_usuario
+                INNER JOIN obra AS ob ON dev.obra = ob.isbn
+                WHERE mul.multa = %s
             """
             cursor.execute(sql, (id_multa,))
-            return cursor.fetchone()
+            fila = cursor.fetchone()
+            if fila:
+                fila["usuario"] = fila["usuario"].strip()
+            return fila
         finally:
             cursor.close()
 
-    # [OPCIÓN 5 -> 2]
+    # [OPCION 5 -> 2]
     def obtener_multa(self, id_multa):
         cursor = self.db.obtener_cursor()
         try:
@@ -167,9 +178,9 @@ class GestorMultas(GestorBase):
         finally:
             cursor.close()
 
-    # [OPCIÓN 5 -> 2]
+    # [OPCION 5 -> 2]
     def marcar_pagada(self, id_multa):
-        """Marca una multa pendiente como 'Pagada' usando únicamente su número de multa."""
+        # Cambia una multa pendiente a 'Pagada' usando solo su numero de multa
         cursor = self.db.obtener_cursor()
         try:
             cursor.execute(

@@ -1,11 +1,11 @@
-"""Módulo de conexión a MySQL (XAMPP) para prestamos_bibliotecarios."""
+"""Archivo de la conexion. Aqui se ve como el programa se conecta a la base de datos MySQL (XAMPP)."""
 
 import mysql.connector
 from mysql.connector import Error
 
 
 class ConexionDB:
-    """Administra una única conexión reutilizable a MySQL con soporte de transacciones."""
+    """Clase de la conexion. Guarda una sola conexion a MySQL que se reutiliza, y maneja guardar o deshacer cambios."""
 
     _instancia = None
 
@@ -16,7 +16,7 @@ class ConexionDB:
         return cls._instancia
 
     def conectar(self):
-        """Establece o reactiva la conexión a la base de datos en XAMPP."""
+        """Abre la conexion a la base de datos, o usa la que ya esta abierta."""
         if self._conexion is not None and self._conexion.is_connected():
             return self._conexion
 
@@ -38,29 +38,29 @@ class ConexionDB:
             ) from e
 
     def obtener_cursor(self, diccionario=True):
-        """Devuelve un cursor listo para ejecutar consultas parametrizadas."""
+        """Regresa un cursor para ejecutar consultas."""
         conexion = self.conectar()
         return conexion.cursor(dictionary=diccionario)
 
     def confirmar(self):
-        """Confirma (commit) la transacción actual."""
+        """Guarda los cambios hechos (commit)."""
         if self._conexion and self._conexion.is_connected():
             self._conexion.commit()
 
     def revertir(self):
-        """Revierte (rollback) la transacción actual en caso de error."""
+        """Deshace los cambios si hubo error (rollback)."""
         if self._conexion and self._conexion.is_connected():
             self._conexion.rollback()
 
     def cerrar(self):
-        """Cierra la conexión de forma segura."""
+        """Cierra la conexion."""
         if self._conexion and self._conexion.is_connected():
             self._conexion.close()
             self._conexion = None
 
 
 class GestorBase:
-    """Clase base para compartir la conexión Singleton entre todos los gestores."""
+    """Clase base de los gestores. Todos comparten la misma conexion."""
 
     def __init__(self):
         self.db = ConexionDB()

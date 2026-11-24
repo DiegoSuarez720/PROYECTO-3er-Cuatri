@@ -1,4 +1,4 @@
-"""Menú de devoluciones (Opción 4 -> 1 y 2)."""
+"""Este archivo tiene el menu de devoluciones (opcion 4 -> 1 y 2): registrar devolucion y consultar por fecha."""
 
 from mysql.connector import Error
 
@@ -26,7 +26,7 @@ from prestamos_y_multas.multas_sql import TARIFA_MULTA_DIA
 
 
 class MenuDevoluciones:
-    """Opción 4: registrar devolución y consultar devoluciones por fecha (filtro de 3 opciones)."""
+    """Esta clase es la opcion 4: registra devoluciones y las consulta por fecha con un filtro de 3 opciones."""
 
     def __init__(self, devoluciones, empleado_activo):
         self.devoluciones = devoluciones

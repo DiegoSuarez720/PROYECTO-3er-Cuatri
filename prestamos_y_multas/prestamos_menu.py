@@ -1,4 +1,4 @@
-"""Menú de préstamos (Opción 3 -> 1, 2 y 3)."""
+"""Este archivo tiene el menu de prestamos (opcion 3 -> 1, 2 y 3): registrar prestamo, ver detalle por folio y consultar por fecha."""
 
 from datetime import date, timedelta
 from mysql.connector import Error
@@ -27,7 +27,7 @@ from registros.catalogos_menu import seleccionar_o_crear_usuario
 
 
 class MenuPrestamos:
-    """Opción 3: registrar préstamo, detalle por folio y consulta por fecha."""
+    """Esta clase es la opcion 3: registra prestamos, muestra el detalle por folio y consulta por fecha."""
 
     def __init__(self, prestamos, obras, multas, catalogos, empleado_activo):
         self.prestamos = prestamos
@@ -279,7 +279,7 @@ class MenuPrestamos:
                     return
 
     def _capturar_ejemplares_prestamo(self, fecha_salida, seleccionados_actuales=None):
-        """Selecciona 1 o más ejemplares (ISBN -> número) con retroceso paso a paso."""
+        """Elige uno o mas ejemplares (ISBN y numero) y deja regresar paso a paso."""
         seleccionados = list(seleccionados_actuales) if seleccionados_actuales else []
 
         while True:
@@ -309,7 +309,7 @@ class MenuPrestamos:
             self._elegir_ejemplar_de_isbn(isbn, seleccionados, fecha_salida)
 
     def _elegir_ejemplar_de_isbn(self, isbn, seleccionados, fecha_salida):
-        """Valida existencia, fecha de adquisición y disponibilidad de ejemplares de un ISBN."""
+        """Revisa que el ISBN exista, su fecha de adquisicion y que haya ejemplares disponibles."""
         if not self.obras.existe_obra(isbn):
             mostrar_error("Ese ISBN no existe en el catálogo. Intenta con otro.")
             return False

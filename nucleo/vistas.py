@@ -1,4 +1,4 @@
-"""Funciones públicas para mostrar tablas de datos y confirmar continuación (usadas por todos los menús)."""
+"""Archivo de vistas. Aqui se ven las funciones que muestran tablas de datos y la de confirmar si se continua (las usan todos los menus)."""
 
 from nucleo.utilidades import (
     confirmar,
@@ -154,7 +154,7 @@ def mostrar_multas(datos):
 
 
 def confirmar_continuar(etiqueta):
-    """Pregunta si desea continuar; 'atras'/'cancelar' regresan al menú."""
+    """Pregunta si se quiere continuar; 'atras' o 'cancelar' regresan al menu."""
     try:
         return confirmar(etiqueta)
     except (OperacionCancelada, PasoAnterior):

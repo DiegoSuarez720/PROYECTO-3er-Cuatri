@@ -1,4 +1,4 @@
-"""Flujo de inicio de sesión de empleados (menú de acceso)."""
+"""Archivo del login. Aqui se ve como el empleado escribe su usuario y contrasena para entrar."""
 
 from mysql.connector import Error
 
@@ -15,7 +15,7 @@ from nucleo.utilidades import (
 
 
 def iniciar_sesion(auth):
-    """Pide credenciales y devuelve el empleado autenticado, o None si el usuario escribe 'salir'."""
+    """Pide usuario y contrasena. Regresa el empleado si son correctos, o None si escribe 'salir'."""
     while True:
         limpiar_pantalla()
         mostrar_titulo(

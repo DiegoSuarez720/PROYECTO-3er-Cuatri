@@ -1,4 +1,4 @@
-"""Menú de obras (Opción 1) y asignación de localización (Opción 2)."""
+"""Este archivo tiene el menu de obras (opcion 1) y la asignacion de localizacion (opcion 2)."""
 
 from datetime import date
 from mysql.connector import Error
@@ -37,7 +37,7 @@ from registros.catalogos_menu import (
 
 
 class MenuObras:
-    """Opción 1: registrar obra, abastecer y ficha completa. Opción 2: asignar localización a ejemplares."""
+    """Esta clase es la opcion 1: registra obra, abastece y muestra la ficha completa. Opcion 2: asigna localizacion a los ejemplares."""
 
     def __init__(self, obras, catalogos):
         self.obras = obras
