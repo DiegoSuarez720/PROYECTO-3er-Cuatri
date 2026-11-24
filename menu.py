@@ -1,6 +1,6 @@
-"""Archivo principal con los menús en terminal (CLI estándar) y navegación paso a paso."""
+"""Archivo principal con los menús en terminal (CLI estándar), validaciones estrictas y navegación paso a paso."""
 
-from datetime import timedelta
+from datetime import date, timedelta
 from mysql.connector import Error
 
 from conexion import ConexionDB
@@ -38,10 +38,23 @@ from utilidades import (
     mostrar_ficha,
     mostrar_tabla,
     mostrar_titulo,
+    normalizar_telefono,
     pausar,
     pedir_entero,
     pedir_fecha,
     pedir_texto,
+    validar_clave_pais,
+    validar_codigo_categoria,
+    validar_contrasena,
+    validar_isbn,
+    validar_nombre_persona,
+    validar_nombre_usuario,
+    validar_numero_domicilio,
+    validar_rfc,
+    validar_solo_letras,
+    validar_telefono,
+    validar_texto_descriptivo,
+    validar_titulo,
 )
 
 
@@ -84,13 +97,14 @@ class AplicacionBiblioteca:
             return False
 
     def _capturar_telefonos(self, entidad, telefonos_actuales=None):
-        """Captura al menos un teléfono obligatorio con retroceso paso a paso."""
+        """Captura al menos un teléfono válido con retroceso paso a paso y sin duplicados."""
         telefonos = list(telefonos_actuales) if telefonos_actuales else []
         while True:
             if not telefonos:
                 tel = pedir_texto(
-                    f"Teléfono principal de {entidad} (obligatorio, máx. 20)",
+                    f"Teléfono principal de {entidad} (10-15 dígitos, ej. 664-123-4567)",
                     max_len=20,
+                    validador=validar_telefono,
                 )
                 telefonos.append(tel)
             try:
@@ -104,13 +118,18 @@ class AplicacionBiblioteca:
                 return telefonos
 
             try:
-                tel = pedir_texto("Teléfono adicional (máx. 20)", max_len=20)
+                tel = pedir_texto(
+                    "Teléfono adicional (10-15 dígitos)",
+                    max_len=20,
+                    validador=validar_telefono,
+                )
             except PasoAnterior:
                 mostrar_aviso("Regresando a la confirmación de teléfonos...")
                 continue
 
-            if tel in telefonos:
-                mostrar_aviso("Ese teléfono ya fue agregado a la lista.")
+            digitos_nuevos = normalizar_telefono(tel)
+            if any(normalizar_telefono(t) == digitos_nuevos for t in telefonos):
+                mostrar_aviso("Ese número de teléfono ya fue agregado a la lista.")
             else:
                 telefonos.append(tel)
 
@@ -234,7 +253,7 @@ class AplicacionBiblioteca:
                 break
 
     # ==========================================================
-    # HELPERS DE SELECCIÓN O ALTA AL VUELO (CON RETROCESO PASO A PASO)
+    # HELPERS DE SELECCIÓN O ALTA AL VUELO (CON VALIDACIONES Y RETROCESO)
     # ==========================================================
     def _crear_pais_rapido(self):
         print("\n--- Nuevo País (escribe 'atras' para volver a la lista) ---")
@@ -246,7 +265,9 @@ class AplicacionBiblioteca:
             try:
                 if paso == 0:
                     val = pedir_texto(
-                        "Clave de país (ej. MEX, ESP, USA; máx. 5)", max_len=5
+                        "Clave de país (2-5 letras, ej. MEX, ESP, USA)",
+                        max_len=5,
+                        validador=validar_clave_pais,
                     ).upper()
                     if self.catalogos.existe_pais(val):
                         mostrar_error(f"Ya existe un país registrado con la clave '{val}'.")
@@ -254,7 +275,11 @@ class AplicacionBiblioteca:
                     clave = val
                     paso = 1
                 elif paso == 1:
-                    val = pedir_texto("Nombre del país", max_len=50)
+                    val = pedir_texto(
+                        "Nombre del país",
+                        max_len=50,
+                        validador=validar_solo_letras,
+                    )
                     if self.catalogos.existe_pais_nombre(val):
                         mostrar_error(f"Ya existe un país registrado con el nombre '{val}'.")
                         continue
@@ -306,7 +331,11 @@ class AplicacionBiblioteca:
         print("\n--- Nuevo Tipo de Obra (escribe 'atras' para volver a la lista) ---")
         while True:
             try:
-                nombre = pedir_texto("Tipo de obra (ej. Libro, Revista, Tesis)", max_len=50)
+                nombre = pedir_texto(
+                    "Tipo de obra (ej. Libro, Revista, Tesis)",
+                    max_len=50,
+                    validador=validar_solo_letras,
+                )
             except PasoAnterior:
                 mostrar_aviso("Regresando a la selección de tipos de obra...")
                 return None
@@ -350,7 +379,7 @@ class AplicacionBiblioteca:
                 mostrar_error("Ingresa un ID numérico válido o escribe 'nuevo'.")
                 continue
 
-            if not self.catalogos.existe_tipo(id_tipo):
+            if id_tipo <= 0 or not self.catalogos.existe_tipo(id_tipo):
                 mostrar_error("Ese ID de tipo de obra no existe.")
                 continue
             return id_tipo
@@ -365,7 +394,9 @@ class AplicacionBiblioteca:
             try:
                 if paso == 0:
                     val = pedir_texto(
-                        "Código de categoría (ej. FIC, INF, HIS; máx. 5)", max_len=5
+                        "Código de categoría (2-5 letras/números, ej. 005, FIC)",
+                        max_len=5,
+                        validador=validar_codigo_categoria,
                     ).upper()
                     if self.catalogos.existe_categoria(val):
                         mostrar_error(f"Ya existe una categoría con el código '{val}'.")
@@ -373,7 +404,11 @@ class AplicacionBiblioteca:
                     codigo = val
                     paso = 1
                 elif paso == 1:
-                    val = pedir_texto("Género / descripción (máx. 30)", max_len=30)
+                    val = pedir_texto(
+                        "Género / descripción (máx. 30)",
+                        max_len=30,
+                        validador=validar_solo_letras,
+                    )
                     if self.catalogos.existe_categoria_genero(val):
                         mostrar_error(f"Ya existe una categoría registrada con el género '{val}'.")
                         continue
@@ -431,13 +466,26 @@ class AplicacionBiblioteca:
         while paso < 3:
             try:
                 if paso == 0:
-                    nombre = pedir_texto("Nombre de pila del autor", max_len=50)
+                    nombre = pedir_texto(
+                        "Nombre de pila del autor",
+                        max_len=50,
+                        validador=validar_nombre_persona,
+                    )
                     paso = 1
                 elif paso == 1:
-                    ap1 = pedir_texto("Primer apellido del autor", max_len=50)
+                    ap1 = pedir_texto(
+                        "Primer apellido del autor",
+                        max_len=50,
+                        validador=validar_nombre_persona,
+                    )
                     paso = 2
                 elif paso == 2:
-                    ap2 = pedir_texto("Segundo apellido del autor", max_len=50, obligatorio=False)
+                    ap2 = pedir_texto(
+                        "Segundo apellido del autor",
+                        max_len=50,
+                        obligatorio=False,
+                        validador=validar_nombre_persona,
+                    )
                     if self.catalogos.existe_autor_nombre(nombre, ap1, ap2):
                         mostrar_error("Ya existe un autor registrado con ese mismo nombre completo.")
                         paso = 0
@@ -486,7 +534,7 @@ class AplicacionBiblioteca:
                 mostrar_error("Ingresa un ID numérico válido o escribe 'nuevo'.")
                 continue
 
-            if not self.catalogos.existe_autor(id_autor):
+            if id_autor <= 0 or not self.catalogos.existe_autor(id_autor):
                 mostrar_error("Ese ID de autor no existe.")
                 continue
             return id_autor
@@ -500,7 +548,11 @@ class AplicacionBiblioteca:
         while paso < 2:
             try:
                 if paso == 0:
-                    nombre = pedir_texto("Nombre de la editorial", max_len=50)
+                    nombre = pedir_texto(
+                        "Nombre de la editorial",
+                        max_len=50,
+                        validador=validar_texto_descriptivo,
+                    )
                     paso = 1
                 elif paso == 1:
                     clave_pais = self._seleccionar_o_crear_pais()
@@ -553,7 +605,7 @@ class AplicacionBiblioteca:
                 mostrar_error("Ingresa un ID numérico válido o escribe 'nuevo'.")
                 continue
 
-            if not self.catalogos.existe_editorial(id_ed):
+            if id_ed <= 0 or not self.catalogos.existe_editorial(id_ed):
                 mostrar_error("Ese ID de editorial no existe.")
                 continue
             return id_ed
@@ -568,14 +620,22 @@ class AplicacionBiblioteca:
         while paso < 3:
             try:
                 if paso == 0:
-                    val = pedir_texto("RFC del proveedor (máx. 13)", max_len=13).upper()
+                    val = pedir_texto(
+                        "RFC del proveedor (12-13 caracteres, ej. DIS890412AB1)",
+                        max_len=13,
+                        validador=validar_rfc,
+                    ).upper()
                     if self.catalogos.existe_proveedor(val):
                         mostrar_error(f"Ya existe un proveedor registrado con el RFC '{val}'.")
                         continue
                     rfc = val
                     paso = 1
                 elif paso == 1:
-                    empresa = pedir_texto("Nombre de la empresa", max_len=50)
+                    empresa = pedir_texto(
+                        "Nombre de la empresa",
+                        max_len=50,
+                        validador=validar_texto_descriptivo,
+                    )
                     paso = 2
                 elif paso == 2:
                     telefonos = self._capturar_telefonos("este proveedor", telefonos)
@@ -632,13 +692,17 @@ class AplicacionBiblioteca:
         while paso < 3:
             try:
                 if paso == 0:
-                    seccion = pedir_texto("Sección (ej. Literatura, Ingeniería)", max_len=50)
+                    seccion = pedir_texto(
+                        "Sección (ej. Literatura, Ingeniería)",
+                        max_len=50,
+                        validador=validar_texto_descriptivo,
+                    )
                     paso = 1
                 elif paso == 1:
-                    pasillo = pedir_entero("Número de pasillo", minimo=0)
+                    pasillo = pedir_entero("Número de pasillo (1-500)", minimo=1, maximo=500)
                     paso = 2
                 elif paso == 2:
-                    estante = pedir_entero("Número de estante", minimo=0)
+                    estante = pedir_entero("Número de estante (1-500)", minimo=1, maximo=500)
                     if self.catalogos.existe_localizacion_datos(seccion, pasillo, estante):
                         mostrar_error(
                             "Ya existe una localización con esa misma sección, pasillo y estante."
@@ -695,7 +759,7 @@ class AplicacionBiblioteca:
                 mostrar_error("Ingresa un ID numérico válido o escribe 'nuevo'.")
                 continue
 
-            if not self.catalogos.existe_localizacion(id_loc):
+            if id_loc <= 0 or not self.catalogos.existe_localizacion(id_loc):
                 mostrar_error("Ese ID de localización no existe.")
                 continue
             return id_loc
@@ -714,22 +778,47 @@ class AplicacionBiblioteca:
         while paso < 7:
             try:
                 if paso == 0:
-                    nombre = pedir_texto("Nombre de pila", max_len=50)
+                    nombre = pedir_texto(
+                        "Nombre de pila",
+                        max_len=50,
+                        validador=validar_nombre_persona,
+                    )
                     paso = 1
                 elif paso == 1:
-                    ap1 = pedir_texto("Primer apellido", max_len=50)
+                    ap1 = pedir_texto(
+                        "Primer apellido",
+                        max_len=50,
+                        validador=validar_nombre_persona,
+                    )
                     paso = 2
                 elif paso == 2:
-                    ap2 = pedir_texto("Segundo apellido", max_len=50, obligatorio=False)
+                    ap2 = pedir_texto(
+                        "Segundo apellido",
+                        max_len=50,
+                        obligatorio=False,
+                        validador=validar_nombre_persona,
+                    )
                     paso = 3
                 elif paso == 3:
-                    calle = pedir_texto("Calle (máx. 30)", max_len=30)
+                    calle = pedir_texto(
+                        "Calle (máx. 30)",
+                        max_len=30,
+                        validador=validar_texto_descriptivo,
+                    )
                     paso = 4
                 elif paso == 4:
-                    numero = pedir_texto("Número exterior/interior (máx. 10)", max_len=10)
+                    numero = pedir_texto(
+                        "Número exterior/interior (ej. 412, 10-B o S/N)",
+                        max_len=10,
+                        validador=validar_numero_domicilio,
+                    )
                     paso = 5
                 elif paso == 5:
-                    colonia = pedir_texto("Colonia (máx. 50)", max_len=50)
+                    colonia = pedir_texto(
+                        "Colonia (máx. 50)",
+                        max_len=50,
+                        validador=validar_texto_descriptivo,
+                    )
                     if self.catalogos.existe_usuario_datos(
                         nombre, ap1, ap2, calle, numero, colonia
                     ):
@@ -797,7 +886,7 @@ class AplicacionBiblioteca:
                 mostrar_error("Ingresa un ID numérico válido o escribe 'nuevo'.")
                 continue
 
-            if not self.catalogos.existe_usuario(id_usuario):
+            if id_usuario <= 0 or not self.catalogos.existe_usuario(id_usuario):
                 mostrar_error(
                     "No existe ningún usuario con ese ID. Elige uno de la tabla o escribe 'nuevo'."
                 )
@@ -889,6 +978,7 @@ class AplicacionBiblioteca:
             )
             mostrar_ayuda_cancelar()
 
+            anio_actual = date.today().year
             isbn = None
             titulo = None
             subtitulo = None
@@ -908,7 +998,11 @@ class AplicacionBiblioteca:
                 while paso < 13:
                     try:
                         if paso == 0:
-                            val = pedir_texto("ISBN (máx. 17 caracteres)", max_len=17)
+                            val = pedir_texto(
+                                "ISBN (10 o 13 dígitos, ej. 978-84-9759-220-8)",
+                                max_len=17,
+                                validador=validar_isbn,
+                            ).upper()
                             if self.obras.existe_obra(val):
                                 mostrar_aviso(
                                     "Ese ISBN ya existe. Usa otro ISBN o elige la opción 2 para abastecer."
@@ -917,20 +1011,29 @@ class AplicacionBiblioteca:
                             isbn = val
                             paso = 1
                         elif paso == 1:
-                            titulo = pedir_texto("Título (máx. 50 caracteres)", max_len=50)
+                            titulo = pedir_texto(
+                                "Título (máx. 50 caracteres)",
+                                max_len=50,
+                                validador=validar_titulo,
+                            )
                             paso = 2
                         elif paso == 2:
                             subtitulo = pedir_texto(
-                                "Subtítulo (máx. 100 caracteres)", max_len=100, obligatorio=False
+                                "Subtítulo (máx. 100 caracteres)",
+                                max_len=100,
+                                obligatorio=False,
+                                validador=validar_texto_descriptivo,
                             )
                             paso = 3
                         elif paso == 3:
                             anio = pedir_entero(
-                                "Año de publicación (4 dígitos)", minimo=1000, maximo=2100
+                                f"Año de publicación (1450-{anio_actual})",
+                                minimo=1450,
+                                maximo=anio_actual,
                             )
                             paso = 4
                         elif paso == 4:
-                            paginas = pedir_entero("Número de páginas", minimo=1)
+                            paginas = pedir_entero("Número de páginas (1-10000)", minimo=1, maximo=10000)
                             paso = 5
                         elif paso == 5:
                             id_tipo = self._seleccionar_o_crear_tipo()
@@ -958,10 +1061,19 @@ class AplicacionBiblioteca:
                             rfc_prov = self._seleccionar_o_crear_proveedor()
                             paso = 10
                         elif paso == 10:
-                            fecha_adq = pedir_fecha("Fecha de adquisición")
+                            fecha_min_adq = date(max(1900, anio), 1, 1)
+                            fecha_adq = pedir_fecha(
+                                "Fecha de adquisición",
+                                fecha_min=fecha_min_adq,
+                                permitir_futuro=False,
+                            )
                             paso = 11
                         elif paso == 11:
-                            cantidad = pedir_entero("Cantidad de ejemplares recibidos", minimo=1)
+                            cantidad = pedir_entero(
+                                "Cantidad de ejemplares recibidos (1-500)",
+                                minimo=1,
+                                maximo=500,
+                            )
                             paso = 12
                         elif paso == 12:
                             if not self.catalogos.listar_localizaciones():
@@ -1038,6 +1150,7 @@ class AplicacionBiblioteca:
 
             mostrar_ayuda_cancelar()
             isbn = None
+            obra_bd = None
             rfc_prov = None
             fecha_adq = None
             cantidad = None
@@ -1050,19 +1163,30 @@ class AplicacionBiblioteca:
                         if paso == 0:
                             self._mostrar_obras(obras)
                             val = pedir_texto("ISBN de la obra a abastecer", max_len=17)
-                            if not self.obras.existe_obra(val):
+                            info = self.obras.obtener_obra(val)
+                            if not info:
                                 mostrar_error("No se encontró ninguna obra con ese ISBN.")
                                 continue
                             isbn = val
+                            obra_bd = info
                             paso = 1
                         elif paso == 1:
                             rfc_prov = self._seleccionar_o_crear_proveedor()
                             paso = 2
                         elif paso == 2:
-                            fecha_adq = pedir_fecha("Fecha de adquisición")
+                            fecha_min_adq = date(max(1900, obra_bd["anio"]), 1, 1)
+                            fecha_adq = pedir_fecha(
+                                "Fecha de adquisición",
+                                fecha_min=fecha_min_adq,
+                                permitir_futuro=False,
+                            )
                             paso = 3
                         elif paso == 3:
-                            cantidad = pedir_entero("Cantidad de nuevos ejemplares", minimo=1)
+                            cantidad = pedir_entero(
+                                "Cantidad de nuevos ejemplares (1-500)",
+                                minimo=1,
+                                maximo=500,
+                            )
                             paso = 4
                         elif paso == 4:
                             if not self.catalogos.listar_localizaciones():
@@ -1317,9 +1441,21 @@ class AplicacionBiblioteca:
         while True:
             limpiar_pantalla()
             mostrar_titulo("PRÉSTAMOS REALIZADOS EN UNA FECHA")
+
+            fechas = self.prestamos.listar_fechas_prestamos()
+            if not fechas:
+                mostrar_aviso("No hay préstamos registrados en la base de datos.")
+                pausar()
+                return
+
+            mostrar_tabla(
+                "Fechas con Préstamos Registrados",
+                ["Fecha", "Préstamos", "Ejemplares"],
+                [(f["fecha_salida"], f["total_prestamos"], f["total_ejemplares"]) for f in fechas],
+            )
             mostrar_ayuda_cancelar()
             try:
-                fecha = pedir_fecha("Fecha de préstamo a consultar")
+                fecha = pedir_fecha("Fecha de préstamo a consultar", permitir_futuro=False)
                 registros = self.prestamos.consultar_prestamos_por_fecha(fecha)
                 if not registros:
                     mostrar_aviso(
@@ -1385,9 +1521,22 @@ class AplicacionBiblioteca:
                     try:
                         if paso == 0:
                             id_usuario = self._seleccionar_o_crear_usuario()
+                            cant_multas, monto_pend = self.multas.contar_multas_pendientes_usuario(
+                                id_usuario
+                            )
+                            if cant_multas > 0:
+                                mostrar_aviso(
+                                    f"Atención: Este usuario tiene {cant_multas} multa(s) "
+                                    f"pendiente(s) por un total de ${monto_pend}."
+                                )
                             paso = 1
                         elif paso == 1:
-                            fecha_salida = pedir_fecha("Fecha de salida del préstamo")
+                            fecha_min_prestamo = date.today() - timedelta(days=365)
+                            fecha_salida = pedir_fecha(
+                                "Fecha de salida del préstamo",
+                                fecha_min=fecha_min_prestamo,
+                                permitir_futuro=False,
+                            )
                             fecha_limite = fecha_salida + timedelta(days=Prestamo.DIAS_PLAZO)
                             print(
                                 f"Fecha límite calculada automáticamente (+14 días): "
@@ -1396,7 +1545,9 @@ class AplicacionBiblioteca:
                             paso = 2
                         elif paso == 2:
                             self._mostrar_resumen_disponibles(resumen_disp)
-                            seleccionados = self._capturar_ejemplares_prestamo(seleccionados)
+                            seleccionados = self._capturar_ejemplares_prestamo(
+                                fecha_salida, seleccionados
+                            )
                             paso = 3
                     except PasoAnterior:
                         if paso == 0:
@@ -1428,14 +1579,14 @@ class AplicacionBiblioteca:
                 if not self._confirmar_continuar("¿Deseas intentar registrar otro préstamo?"):
                     return
 
-    def _capturar_ejemplares_prestamo(self, seleccionados_actuales=None):
+    def _capturar_ejemplares_prestamo(self, fecha_salida, seleccionados_actuales=None):
         """Selecciona 1 o más ejemplares (ISBN -> número) con retroceso paso a paso."""
         seleccionados = list(seleccionados_actuales) if seleccionados_actuales else []
 
         while True:
             if not seleccionados:
                 isbn = pedir_texto("ISBN de la obra a prestar", max_len=17)
-                agregado = self._elegir_ejemplar_de_isbn(isbn, seleccionados)
+                agregado = self._elegir_ejemplar_de_isbn(isbn, seleccionados, fecha_salida)
                 if not agregado:
                     continue
             try:
@@ -1456,12 +1607,20 @@ class AplicacionBiblioteca:
                 mostrar_aviso("Regresando a la confirmación de ejemplares...")
                 continue
 
-            self._elegir_ejemplar_de_isbn(isbn, seleccionados)
+            self._elegir_ejemplar_de_isbn(isbn, seleccionados, fecha_salida)
 
-    def _elegir_ejemplar_de_isbn(self, isbn, seleccionados):
-        """Valida un ISBN y permite elegir uno de sus ejemplares disponibles."""
+    def _elegir_ejemplar_de_isbn(self, isbn, seleccionados, fecha_salida):
+        """Valida existencia, fecha de adquisición y disponibilidad de ejemplares de un ISBN."""
         if not self.obras.existe_obra(isbn):
             mostrar_error("Ese ISBN no existe en el catálogo. Intenta con otro.")
+            return False
+
+        fecha_adq = self.obras.obtener_fecha_primera_adquisicion(isbn)
+        if fecha_adq and fecha_salida < fecha_adq:
+            mostrar_error(
+                f"Esta obra se adquirió el {formatear_fecha(fecha_adq)}; "
+                f"no puedes prestarla con fecha de salida {formatear_fecha(fecha_salida)}."
+            )
             return False
 
         copias_bd = self.prestamos.obtener_ejemplares_disponibles_por_isbn(isbn)
@@ -1500,7 +1659,7 @@ class AplicacionBiblioteca:
             return True
 
     # ==========================================================
-    # OPCIÓN 4: DEVOLUCIONES DE EJEMPLARES (+ CONSULTA POR FECHA)
+    # OPCIÓN 4: DEVOLUCIONES DE EJEMPLARES (+ FECHAS Y FILTRO DE 3 OPCIONES)
     # ==========================================================
     def flujo_devoluciones(self):
         while True:
@@ -1527,22 +1686,42 @@ class AplicacionBiblioteca:
         while True:
             limpiar_pantalla()
             mostrar_titulo("DEVOLUCIONES REGISTRADAS EN UNA FECHA")
+
+            fechas = self.prestamos.listar_fechas_devoluciones()
+            if not fechas:
+                mostrar_aviso("No hay devoluciones registradas en la base de datos.")
+                pausar()
+                return
+
+            mostrar_tabla(
+                "Fechas con Devoluciones Registradas",
+                ["Fecha", "Total", "A tiempo", "Con retraso"],
+                [
+                    (f["fecha_devolucion"], f["total"], f["a_tiempo"], f["con_retraso"])
+                    for f in fechas
+                ],
+            )
             mostrar_ayuda_cancelar()
 
             fecha = None
-            solo_a_tiempo = True
+            opcion_filtro = None
             paso = 0
 
             try:
                 while paso < 2:
                     try:
                         if paso == 0:
-                            fecha = pedir_fecha("Fecha de devolución a consultar")
+                            fecha = pedir_fecha(
+                                "Fecha de devolución a consultar",
+                                permitir_futuro=False,
+                            )
                             paso = 1
                         elif paso == 1:
-                            solo_a_tiempo = confirmar(
-                                "¿Mostrar únicamente devoluciones entregadas a tiempo?"
-                            )
+                            print("\nTipo de devoluciones a mostrar:")
+                            print("1. Solo entregadas a tiempo")
+                            print("2. Solo entregadas con retraso")
+                            print("3. Todas las devoluciones de esa fecha")
+                            opcion_filtro = pedir_entero("Elige una opción (1-3)", minimo=1, maximo=3)
                             paso = 2
                     except PasoAnterior:
                         if paso == 0:
@@ -1550,10 +1729,16 @@ class AplicacionBiblioteca:
                         paso -= 1
                         mostrar_aviso("Regresando al campo anterior...")
 
+                mapa_filtros = {
+                    1: ("a_tiempo", "a tiempo "),
+                    2: ("retraso", "con retraso "),
+                    3: ("todas", ""),
+                }
+                filtro, etiqueta = mapa_filtros[opcion_filtro]
+
                 registros = self.prestamos.consultar_devoluciones_por_fecha(
-                    fecha, solo_a_tiempo=solo_a_tiempo
+                    fecha, filtro=filtro
                 )
-                etiqueta = "a tiempo " if solo_a_tiempo else ""
                 if not registros:
                     mostrar_aviso(
                         f"No se encontraron devoluciones {etiqueta}el {formatear_fecha(fecha)}."
@@ -1677,14 +1862,11 @@ class AplicacionBiblioteca:
                             paso = 3
                         elif paso == 3:
                             fecha_salida = ejemplares_isbn[0]["fecha_salida"]
-                            val_fecha = pedir_fecha("Fecha real de devolución")
-                            if val_fecha < fecha_salida:
-                                mostrar_error(
-                                    f"La fecha de devolución no puede ser anterior a la fecha de salida "
-                                    f"({formatear_fecha(fecha_salida)})."
-                                )
-                                continue
-                            fecha_dev = val_fecha
+                            fecha_dev = pedir_fecha(
+                                "Fecha real de devolución",
+                                fecha_min=fecha_salida,
+                                permitir_futuro=False,
+                            )
                             paso = 4
                     except PasoAnterior:
                         if paso == 0:
@@ -1943,7 +2125,9 @@ class AplicacionBiblioteca:
                     try:
                         if paso == 0:
                             val = pedir_texto(
-                                "Clave de país (ej. MEX, ESP, USA; máx. 5)", max_len=5
+                                "Clave de país (2-5 letras, ej. MEX, ESP, USA)",
+                                max_len=5,
+                                validador=validar_clave_pais,
                             ).upper()
                             if self.catalogos.existe_pais(val):
                                 mostrar_error(f"Ya existe un país registrado con la clave '{val}'.")
@@ -1951,7 +2135,11 @@ class AplicacionBiblioteca:
                             clave = val
                             paso = 1
                         elif paso == 1:
-                            val = pedir_texto("Nombre del país", max_len=50)
+                            val = pedir_texto(
+                                "Nombre del país",
+                                max_len=50,
+                                validador=validar_solo_letras,
+                            )
                             if self.catalogos.existe_pais_nombre(val):
                                 mostrar_error(
                                     f"Ya existe un país registrado con el nombre '{val}'."
@@ -1992,7 +2180,11 @@ class AplicacionBiblioteca:
 
                 mostrar_ayuda_cancelar()
                 while True:
-                    nombre = pedir_texto("Tipo de obra (ej. Libro, Revista, Tesis)", max_len=50)
+                    nombre = pedir_texto(
+                        "Tipo de obra (ej. Libro, Revista, Tesis)",
+                        max_len=50,
+                        validador=validar_solo_letras,
+                    )
                     if self.catalogos.existe_tipo_nombre(nombre):
                         mostrar_error(f"Ya existe un tipo de obra registrado como '{nombre}'.")
                         continue
@@ -2030,7 +2222,9 @@ class AplicacionBiblioteca:
                     try:
                         if paso == 0:
                             val = pedir_texto(
-                                "Código de categoría (ej. FIC, INF, HIS; máx. 5)", max_len=5
+                                "Código de categoría (2-5 letras/números, ej. 005, FIC)",
+                                max_len=5,
+                                validador=validar_codigo_categoria,
                             ).upper()
                             if self.catalogos.existe_categoria(val):
                                 mostrar_error(f"Ya existe una categoría con el código '{val}'.")
@@ -2038,7 +2232,11 @@ class AplicacionBiblioteca:
                             codigo = val
                             paso = 1
                         elif paso == 1:
-                            val = pedir_texto("Género / descripción (máx. 30)", max_len=30)
+                            val = pedir_texto(
+                                "Género / descripción (máx. 30)",
+                                max_len=30,
+                                validador=validar_solo_letras,
+                            )
                             if self.catalogos.existe_categoria_genero(val):
                                 mostrar_error(
                                     f"Ya existe una categoría registrada con el género '{val}'."
@@ -2086,13 +2284,26 @@ class AplicacionBiblioteca:
                 while paso < 3:
                     try:
                         if paso == 0:
-                            nombre = pedir_texto("Nombre de pila", max_len=50)
+                            nombre = pedir_texto(
+                                "Nombre de pila",
+                                max_len=50,
+                                validador=validar_nombre_persona,
+                            )
                             paso = 1
                         elif paso == 1:
-                            ap1 = pedir_texto("Primer apellido", max_len=50)
+                            ap1 = pedir_texto(
+                                "Primer apellido",
+                                max_len=50,
+                                validador=validar_nombre_persona,
+                            )
                             paso = 2
                         elif paso == 2:
-                            ap2 = pedir_texto("Segundo apellido", max_len=50, obligatorio=False)
+                            ap2 = pedir_texto(
+                                "Segundo apellido",
+                                max_len=50,
+                                obligatorio=False,
+                                validador=validar_nombre_persona,
+                            )
                             if self.catalogos.existe_autor_nombre(nombre, ap1, ap2):
                                 mostrar_error(
                                     "Ya existe un autor registrado con ese mismo nombre completo."
@@ -2139,7 +2350,11 @@ class AplicacionBiblioteca:
                 while paso < 2:
                     try:
                         if paso == 0:
-                            nombre = pedir_texto("Nombre de la editorial", max_len=50)
+                            nombre = pedir_texto(
+                                "Nombre de la editorial",
+                                max_len=50,
+                                validador=validar_texto_descriptivo,
+                            )
                             paso = 1
                         elif paso == 1:
                             clave_pais = self._seleccionar_o_crear_pais()
@@ -2203,7 +2418,11 @@ class AplicacionBiblioteca:
                 while paso < 3:
                     try:
                         if paso == 0:
-                            val = pedir_texto("RFC del proveedor (máx. 13)", max_len=13).upper()
+                            val = pedir_texto(
+                                "RFC del proveedor (12-13 caracteres, ej. DIS890412AB1)",
+                                max_len=13,
+                                validador=validar_rfc,
+                            ).upper()
                             if self.catalogos.existe_proveedor(val):
                                 mostrar_error(
                                     f"Ya existe un proveedor registrado con el RFC '{val}'."
@@ -2212,7 +2431,11 @@ class AplicacionBiblioteca:
                             rfc = val
                             paso = 1
                         elif paso == 1:
-                            empresa = pedir_texto("Nombre de la empresa", max_len=50)
+                            empresa = pedir_texto(
+                                "Nombre de la empresa",
+                                max_len=50,
+                                validador=validar_texto_descriptivo,
+                            )
                             paso = 2
                         elif paso == 2:
                             telefonos = self._capturar_telefonos("este proveedor", telefonos)
@@ -2264,7 +2487,11 @@ class AplicacionBiblioteca:
                             rfc = val
                             paso = 1
                         elif paso == 1:
-                            val_tel = pedir_texto("Nuevo teléfono (máx. 20)", max_len=20)
+                            val_tel = pedir_texto(
+                                "Nuevo teléfono (10-15 dígitos)",
+                                max_len=20,
+                                validador=validar_telefono,
+                            )
                             if self.catalogos.existe_telefono_proveedor(rfc, val_tel):
                                 mostrar_error(
                                     "Ese teléfono ya está registrado para este proveedor."
@@ -2315,13 +2542,17 @@ class AplicacionBiblioteca:
                 while paso < 3:
                     try:
                         if paso == 0:
-                            seccion = pedir_texto("Sección (ej. Literatura, Ingeniería)", max_len=50)
+                            seccion = pedir_texto(
+                                "Sección (ej. Literatura, Ingeniería)",
+                                max_len=50,
+                                validador=validar_texto_descriptivo,
+                            )
                             paso = 1
                         elif paso == 1:
-                            pasillo = pedir_entero("Número de pasillo", minimo=0)
+                            pasillo = pedir_entero("Número de pasillo (1-500)", minimo=1, maximo=500)
                             paso = 2
                         elif paso == 2:
-                            estante = pedir_entero("Número de estante", minimo=0)
+                            estante = pedir_entero("Número de estante (1-500)", minimo=1, maximo=500)
                             if self.catalogos.existe_localizacion_datos(seccion, pasillo, estante):
                                 mostrar_error(
                                     "Ya existe una localización con esa misma sección, pasillo y estante."
@@ -2388,22 +2619,47 @@ class AplicacionBiblioteca:
                 while paso < 7:
                     try:
                         if paso == 0:
-                            nombre = pedir_texto("Nombre de pila", max_len=50)
+                            nombre = pedir_texto(
+                                "Nombre de pila",
+                                max_len=50,
+                                validador=validar_nombre_persona,
+                            )
                             paso = 1
                         elif paso == 1:
-                            ap1 = pedir_texto("Primer apellido", max_len=50)
+                            ap1 = pedir_texto(
+                                "Primer apellido",
+                                max_len=50,
+                                validador=validar_nombre_persona,
+                            )
                             paso = 2
                         elif paso == 2:
-                            ap2 = pedir_texto("Segundo apellido", max_len=50, obligatorio=False)
+                            ap2 = pedir_texto(
+                                "Segundo apellido",
+                                max_len=50,
+                                obligatorio=False,
+                                validador=validar_nombre_persona,
+                            )
                             paso = 3
                         elif paso == 3:
-                            calle = pedir_texto("Calle (máx. 30)", max_len=30)
+                            calle = pedir_texto(
+                                "Calle (máx. 30)",
+                                max_len=30,
+                                validador=validar_texto_descriptivo,
+                            )
                             paso = 4
                         elif paso == 4:
-                            numero = pedir_texto("Número exterior/interior (máx. 10)", max_len=10)
+                            numero = pedir_texto(
+                                "Número exterior/interior (ej. 412, 10-B o S/N)",
+                                max_len=10,
+                                validador=validar_numero_domicilio,
+                            )
                             paso = 5
                         elif paso == 5:
-                            colonia = pedir_texto("Colonia (máx. 50)", max_len=50)
+                            colonia = pedir_texto(
+                                "Colonia (máx. 50)",
+                                max_len=50,
+                                validador=validar_texto_descriptivo,
+                            )
                             if self.catalogos.existe_usuario_datos(
                                 nombre, ap1, ap2, calle, numero, colonia
                             ):
@@ -2472,7 +2728,11 @@ class AplicacionBiblioteca:
                             id_usr = val_id
                             paso = 1
                         elif paso == 1:
-                            val_tel = pedir_texto("Nuevo teléfono (máx. 20)", max_len=20)
+                            val_tel = pedir_texto(
+                                "Nuevo teléfono (10-15 dígitos)",
+                                max_len=20,
+                                validador=validar_telefono,
+                            )
                             if self.catalogos.existe_telefono_usuario(id_usr, val_tel):
                                 mostrar_error("Ese teléfono ya está registrado para este usuario.")
                                 continue
@@ -2530,16 +2790,33 @@ class AplicacionBiblioteca:
                 while paso < 5:
                     try:
                         if paso == 0:
-                            nombre = pedir_texto("Nombre de pila", max_len=50)
+                            nombre = pedir_texto(
+                                "Nombre de pila",
+                                max_len=50,
+                                validador=validar_nombre_persona,
+                            )
                             paso = 1
                         elif paso == 1:
-                            ap1 = pedir_texto("Primer apellido", max_len=50)
+                            ap1 = pedir_texto(
+                                "Primer apellido",
+                                max_len=50,
+                                validador=validar_nombre_persona,
+                            )
                             paso = 2
                         elif paso == 2:
-                            ap2 = pedir_texto("Segundo apellido", max_len=50, obligatorio=False)
+                            ap2 = pedir_texto(
+                                "Segundo apellido",
+                                max_len=50,
+                                obligatorio=False,
+                                validador=validar_nombre_persona,
+                            )
                             paso = 3
                         elif paso == 3:
-                            val_user = pedir_texto("Nombre de usuario (único, máx. 30)", max_len=30)
+                            val_user = pedir_texto(
+                                "Nombre de usuario (3-30 caracteres, sin espacios)",
+                                max_len=30,
+                                validador=validar_nombre_usuario,
+                            )
                             if self.catalogos.existe_empleado_user(val_user):
                                 mostrar_error(
                                     f"El nombre de usuario '{val_user}' ya está en uso. Elige otro."
@@ -2548,7 +2825,11 @@ class AplicacionBiblioteca:
                             user = val_user
                             paso = 4
                         elif paso == 4:
-                            pwd = pedir_texto("Contraseña (máx. 50)", max_len=50)
+                            pwd = pedir_texto(
+                                "Contraseña (6-50 caracteres, sin espacios)",
+                                max_len=50,
+                                validador=validar_contrasena,
+                            )
                             paso = 5
                     except PasoAnterior:
                         if paso == 0:

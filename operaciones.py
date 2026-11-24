@@ -1,11 +1,14 @@
-"""Clases gestoras con lógica de negocio, anti-duplicados y consultas SQL para las 20 tablas."""
+"""Clases gestoras con lógica de negocio, validaciones de integridad y consultas SQL (20 tablas)."""
 
+from datetime import date, timedelta
 from decimal import Decimal
 from mysql.connector import Error
+
 from conexion import ConexionDB
 from modelos import Empleado
+from utilidades import formatear_fecha, normalizar_telefono
 
-# Tarifa fija diaria por retraso en devolución (pueden ajustarla aquí si lo requieren)
+# Tarifa fija diaria por retraso en devolución
 TARIFA_MULTA_DIA = Decimal("15.00")
 
 
@@ -326,16 +329,16 @@ class GestorCatalogos(GestorBase):
             cursor.close()
 
     def existe_telefono_proveedor(self, rfc, telefono):
+        """Detecta duplicados comparando solo dígitos (ignora guiones o espacios)."""
+        objetivo = normalizar_telefono(telefono)
         cursor = self.db.obtener_cursor()
         try:
             cursor.execute(
-                """
-                SELECT 1 FROM telefono_proveedor
-                WHERE UPPER(proveedor) = UPPER(%s) AND TRIM(telefono) = %s
-                """,
-                (rfc.strip(), telefono.strip()),
+                "SELECT telefono FROM telefono_proveedor WHERE UPPER(proveedor) = UPPER(%s)",
+                (rfc.strip(),),
             )
-            return cursor.fetchone() is not None
+            existentes = cursor.fetchall()
+            return any(normalizar_telefono(f["telefono"]) == objetivo for f in existentes)
         finally:
             cursor.close()
 
@@ -351,10 +354,16 @@ class GestorCatalogos(GestorBase):
                 "INSERT INTO proveedor (RFC, nombre_empresa) VALUES (%s, %s)",
                 (proveedor.rfc, proveedor.nombre_empresa),
             )
-            for tel in dict.fromkeys(t.strip() for t in proveedor.telefonos):
+            vistos = set()
+            for tel in proveedor.telefonos:
+                limpio = tel.strip()
+                clave_tel = normalizar_telefono(limpio)
+                if clave_tel in vistos:
+                    continue
+                vistos.add(clave_tel)
                 cursor.execute(
                     "INSERT INTO telefono_proveedor (telefono, proveedor) VALUES (%s, %s)",
-                    (tel, proveedor.rfc),
+                    (limpio, proveedor.rfc),
                 )
             self.db.confirmar()
         except Error:
@@ -498,13 +507,16 @@ class GestorCatalogos(GestorBase):
             cursor.close()
 
     def existe_telefono_usuario(self, id_usuario, num_tel):
+        """Detecta duplicados comparando solo dígitos (ignora guiones o espacios)."""
+        objetivo = normalizar_telefono(num_tel)
         cursor = self.db.obtener_cursor()
         try:
             cursor.execute(
-                "SELECT 1 FROM telefono_usuario WHERE usuario = %s AND TRIM(num_tel) = %s",
-                (id_usuario, num_tel.strip()),
+                "SELECT num_tel FROM telefono_usuario WHERE usuario = %s",
+                (id_usuario,),
             )
-            return cursor.fetchone() is not None
+            existentes = cursor.fetchall()
+            return any(normalizar_telefono(f["num_tel"]) == objetivo for f in existentes)
         finally:
             cursor.close()
 
@@ -541,10 +553,16 @@ class GestorCatalogos(GestorBase):
             )
             nuevo_id = cursor.lastrowid
 
-            for tel in dict.fromkeys(t.strip() for t in usuario.telefonos):
+            vistos = set()
+            for tel in usuario.telefonos:
+                limpio = tel.strip()
+                clave_tel = normalizar_telefono(limpio)
+                if clave_tel in vistos:
+                    continue
+                vistos.add(clave_tel)
                 cursor.execute(
                     "INSERT INTO telefono_usuario (num_tel, usuario) VALUES (%s, %s)",
-                    (tel, nuevo_id),
+                    (limpio, nuevo_id),
                 )
 
             self.db.confirmar()
@@ -653,6 +671,31 @@ class GestorObras(GestorBase):
         finally:
             cursor.close()
 
+    def obtener_obra(self, isbn):
+        """Obtiene datos básicos de una obra (incluyendo su año de publicación)."""
+        cursor = self.db.obtener_cursor()
+        try:
+            cursor.execute(
+                "SELECT isbn, titulo, `año_publicacion` AS anio FROM obra WHERE isbn = %s",
+                (isbn,),
+            )
+            return cursor.fetchone()
+        finally:
+            cursor.close()
+
+    def obtener_fecha_primera_adquisicion(self, isbn):
+        """Devuelve la fecha más antigua en que se adquirió la obra."""
+        cursor = self.db.obtener_cursor()
+        try:
+            cursor.execute(
+                "SELECT MIN(fecha_adquisicion) AS primera_fecha FROM abastecimiento_obra WHERE obra = %s",
+                (isbn,),
+            )
+            fila = cursor.fetchone()
+            return fila["primera_fecha"] if fila else None
+        finally:
+            cursor.close()
+
     def consultar_obra_completa(self, isbn):
         """Obtiene toda la información de una obra (ISBN, título, subtítulo, tipo, año, editorial, país y autores)."""
         cursor = self.db.obtener_cursor()
@@ -710,13 +753,25 @@ class GestorObras(GestorBase):
     def registrar_obra_completa(
         self, obra, rfc_proveedor, fecha_adquisicion, cantidad, id_localizacion=None
     ):
-        """Inserta obra, autores, editoriales, abastecimiento y N ejemplares."""
+        """Inserta obra, autores, editoriales, abastecimiento y N ejemplares validando fechas y rangos."""
+        hoy = date.today()
+        if obra.anio_publicacion < 1450 or obra.anio_publicacion > hoy.year:
+            raise ValueError(f"El año de publicación debe estar entre 1450 y {hoy.year}.")
+        if obra.num_paginas <= 0 or obra.num_paginas > 10000:
+            raise ValueError("El número de páginas debe estar entre 1 y 10,000.")
+        if fecha_adquisicion > hoy:
+            raise ValueError("La fecha de adquisición no puede ser futura.")
+        if fecha_adquisicion.year < obra.anio_publicacion:
+            raise ValueError(
+                f"La fecha de adquisición ({formatear_fecha(fecha_adquisicion)}) no puede ser "
+                f"anterior al año de publicación ({obra.anio_publicacion})."
+            )
         if not obra.autores:
             raise ValueError("Debes asociar al menos un autor a la obra.")
         if not obra.editoriales:
             raise ValueError("Debes asociar al menos una editorial a la obra.")
-        if cantidad <= 0:
-            raise ValueError("La cantidad de ejemplares debe ser mayor a 0.")
+        if cantidad <= 0 or cantidad > 500:
+            raise ValueError("La cantidad de ejemplares debe estar entre 1 y 500.")
 
         loc_final = id_localizacion if id_localizacion is not None else self.obtener_localizacion_base()
         cursor = self.db.obtener_cursor()
@@ -776,9 +831,20 @@ class GestorObras(GestorBase):
     def abastecer_obra_existente(
         self, isbn, rfc_proveedor, fecha_adquisicion, cantidad, id_localizacion=None
     ):
-        """Agrega más ejemplares a una obra existente acumulando abastecimiento si se repite proveedor."""
-        if cantidad <= 0:
-            raise ValueError("La cantidad debe ser mayor a 0.")
+        """Agrega más ejemplares a una obra existente validando fecha contra publicación y hoy."""
+        hoy = date.today()
+        if cantidad <= 0 or cantidad > 500:
+            raise ValueError("La cantidad debe estar entre 1 y 500 ejemplares.")
+        if fecha_adquisicion > hoy:
+            raise ValueError("La fecha de adquisición no puede ser futura.")
+
+        obra_bd = self.obtener_obra(isbn)
+        if not obra_bd:
+            raise ValueError("La obra especificada no existe.")
+        if fecha_adquisicion.year < obra_bd["anio"]:
+            raise ValueError(
+                f"La fecha de adquisición no puede ser anterior al año de publicación ({obra_bd['anio']})."
+            )
 
         loc_final = id_localizacion if id_localizacion is not None else self.obtener_localizacion_base()
         rfc = rfc_proveedor.upper()
@@ -982,16 +1048,35 @@ class GestorPrestamos(GestorBase):
             cursor.close()
 
     def registrar_prestamo(self, prestamo):
-        """Crea el préstamo (fecha_limite = +14 días) y vincula los ejemplares."""
+        """Crea el préstamo (fecha_limite = +14 días) validando fechas y disponibilidad."""
+        hoy = date.today()
+        if prestamo.fecha_salida > hoy:
+            raise ValueError("La fecha de salida del préstamo no puede ser futura.")
+        if prestamo.fecha_salida < hoy - timedelta(days=365):
+            raise ValueError("La fecha de salida no puede tener más de 1 año de antigüedad.")
         if not prestamo.ejemplares:
             raise ValueError("Debes incluir al menos un ejemplar en el préstamo.")
 
         unicos = list(dict.fromkeys(prestamo.ejemplares))
-        for isbn, num_ej in unicos:
-            if not self.ejemplar_disponible(isbn, num_ej):
-                raise ValueError(
-                    f"El ejemplar #{num_ej} de la obra '{isbn}' no existe o ya está prestado."
+        cursor_check = self.db.obtener_cursor()
+        try:
+            for isbn, num_ej in unicos:
+                if not self.ejemplar_disponible(isbn, num_ej):
+                    raise ValueError(
+                        f"El ejemplar #{num_ej} de la obra '{isbn}' no existe o ya está prestado."
+                    )
+                cursor_check.execute(
+                    "SELECT MIN(fecha_adquisicion) AS fecha_adq FROM abastecimiento_obra WHERE obra = %s",
+                    (isbn,),
                 )
+                fila_adq = cursor_check.fetchone()
+                if fila_adq and fila_adq["fecha_adq"] and prestamo.fecha_salida < fila_adq["fecha_adq"]:
+                    raise ValueError(
+                        f"La obra '{isbn}' se adquirió el {formatear_fecha(fila_adq['fecha_adq'])}; "
+                        f"no puede prestarse con fecha anterior ({formatear_fecha(prestamo.fecha_salida)})."
+                    )
+        finally:
+            cursor_check.close()
 
         cursor = self.db.obtener_cursor()
         try:
@@ -1080,6 +1165,24 @@ class GestorPrestamos(GestorBase):
         finally:
             cursor.close()
 
+    def listar_fechas_prestamos(self):
+        """Lista las fechas en las que existen préstamos registrados y su conteo."""
+        cursor = self.db.obtener_cursor()
+        try:
+            sql = """
+                SELECT p.fecha_salida,
+                       COUNT(DISTINCT p.folio) AS total_prestamos,
+                       COUNT(pe.ejemplar) AS total_ejemplares
+                FROM prestamo AS p
+                INNER JOIN prestamo_ejemplar AS pe ON pe.prestamo = p.folio
+                GROUP BY p.fecha_salida
+                ORDER BY p.fecha_salida DESC
+            """
+            cursor.execute(sql)
+            return cursor.fetchall()
+        finally:
+            cursor.close()
+
     def consultar_prestamos_por_fecha(self, fecha):
         """Lista los préstamos realizados en una fecha específica con cantidad de ejemplares y empleado."""
         cursor = self.db.obtener_cursor()
@@ -1108,8 +1211,27 @@ class GestorPrestamos(GestorBase):
         finally:
             cursor.close()
 
-    def consultar_devoluciones_por_fecha(self, fecha, solo_a_tiempo=True):
-        """Lista las devoluciones registradas en una fecha (todas o únicamente entregadas a tiempo)."""
+    def listar_fechas_devoluciones(self):
+        """Lista las fechas en las que existen devoluciones, separando a tiempo y con retraso."""
+        cursor = self.db.obtener_cursor()
+        try:
+            sql = """
+                SELECT d.fecha_devolucion,
+                       COUNT(*) AS total,
+                       SUM(CASE WHEN d.fecha_devolucion <= p.fecha_limite THEN 1 ELSE 0 END) AS a_tiempo,
+                       SUM(CASE WHEN d.fecha_devolucion > p.fecha_limite THEN 1 ELSE 0 END) AS con_retraso
+                FROM devolucion AS d
+                INNER JOIN prestamo AS p ON d.prestamo = p.folio
+                GROUP BY d.fecha_devolucion
+                ORDER BY d.fecha_devolucion DESC
+            """
+            cursor.execute(sql)
+            return cursor.fetchall()
+        finally:
+            cursor.close()
+
+    def consultar_devoluciones_por_fecha(self, fecha, filtro="a_tiempo"):
+        """Lista las devoluciones registradas en una fecha ('a_tiempo', 'retraso' o 'todas')."""
         cursor = self.db.obtener_cursor()
         try:
             sql = """
@@ -1126,8 +1248,10 @@ class GestorPrestamos(GestorBase):
                 INNER JOIN obra AS o ON d.obra = o.isbn
                 WHERE d.fecha_devolucion = %s
             """
-            if solo_a_tiempo:
+            if filtro == "a_tiempo":
                 sql += " AND d.fecha_devolucion <= p.fecha_limite"
+            elif filtro == "retraso":
+                sql += " AND d.fecha_devolucion > p.fecha_limite"
             sql += " ORDER BY p.folio, d.ejemplar"
             cursor.execute(sql, (fecha,))
             return cursor.fetchall()
@@ -1213,7 +1337,10 @@ class GestorPrestamos(GestorBase):
     def registrar_devolucion(
         self, folio, isbn, num_ejemplar, fecha_devolucion, id_empleado, monto_dia=TARIFA_MULTA_DIA
     ):
-        """Inserta en devolucion y genera automáticamente la multa si hubo retraso."""
+        """Inserta en devolucion validando fechas y genera automáticamente multa si hubo retraso."""
+        if fecha_devolucion > date.today():
+            raise ValueError("La fecha de devolución no puede ser futura.")
+
         cursor = self.db.obtener_cursor()
         try:
             sql_check = """
@@ -1279,6 +1406,23 @@ class GestorPrestamos(GestorBase):
 
 class GestorMultas(GestorBase):
     """Sincronización automática, consulta detallada y pago de multas (entidad débil: columna multa)."""
+
+    def contar_multas_pendientes_usuario(self, id_usuario):
+        """Devuelve (cantidad, monto_total) de multas pendientes de un usuario."""
+        cursor = self.db.obtener_cursor()
+        try:
+            sql = """
+                SELECT COUNT(*) AS cantidad, COALESCE(SUM(m.total), 0) AS total
+                FROM multa AS m
+                INNER JOIN devolucion AS d ON m.devolucion = d.id_devolucion
+                INNER JOIN prestamo AS p ON d.prestamo = p.folio
+                WHERE p.usuario = %s AND m.estado = 'Pendiente'
+            """
+            cursor.execute(sql, (id_usuario,))
+            fila = cursor.fetchone()
+            return (fila["cantidad"], fila["total"]) if fila else (0, Decimal("0.00"))
+        finally:
+            cursor.close()
 
     def generar_multas_automaticas(self, monto_dia=TARIFA_MULTA_DIA):
         """Genera automáticamente multas faltantes para devoluciones tardías sin multa."""

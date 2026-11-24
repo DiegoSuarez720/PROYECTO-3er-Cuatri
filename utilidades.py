@@ -1,13 +1,16 @@
 """Funciones auxiliares en consola estándar (sin librerías externas) para validaciones, fichas y tablas."""
 
 import os
+import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 
 PALABRAS_CANCELAR = ("cancelar", "salir")
 PALABRAS_ATRAS = ("atras", "atrás", "regresar", "volver")
+PALABRAS_RESERVADAS = PALABRAS_CANCELAR + PALABRAS_ATRAS + ("nuevo", "nueva")
 FORMATO_FECHA = "%d-%m-%Y"
+LIMITE_INT_MYSQL = 2147483647
 
 
 class OperacionCancelada(Exception):
@@ -37,6 +40,151 @@ def formatear_fecha(valor):
     return str(valor)
 
 
+def normalizar_telefono(texto):
+    """Extrae únicamente los dígitos de un teléfono para comparar duplicados."""
+    return re.sub(r"\D", "", texto or "")
+
+
+# ==========================================================
+# VALIDADORES DE DOMINIO (ANTI-BASURA Y COHERENCIA)
+# ==========================================================
+def validar_isbn(texto):
+    """Valida formato estándar de ISBN-10 o ISBN-13 (dígitos y guiones opcionales)."""
+    valor = texto.strip().upper()
+    if len(valor) > 17:
+        return (False, "El ISBN no puede exceder 17 caracteres.")
+    if not re.fullmatch(r"[0-9\-]+X?", valor):
+        return (False, "El ISBN solo puede contener dígitos, guiones (y una 'X' final en ISBN-10).")
+    if valor.startswith("-") or valor.endswith("-") or "--" in valor:
+        return (False, "El ISBN tiene guiones mal ubicados.")
+
+    limpio = valor.replace("-", "")
+    if len(limpio) not in (10, 13):
+        return (False, f"El ISBN debe tener exactamente 10 o 13 dígitos (ingresaste {len(limpio)}).")
+    if len(limpio) == 13 and "X" in limpio:
+        return (False, "Un ISBN-13 solo puede contener números (sin 'X').")
+    if len(set(limpio)) == 1:
+        return (False, "El ISBN no puede estar formado por el mismo dígito repetido.")
+    return (True, "")
+
+
+def validar_titulo(texto):
+    """Permite títulos con letras o números (ej. '1984'), bloqueando puros símbolos."""
+    if not re.search(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]", texto):
+        return (False, "Debe contener al menos una letra o número (no solo símbolos).")
+    return (True, "")
+
+
+def validar_texto_descriptivo(texto):
+    """Para subtítulos, editoriales, empresas, calles, colonias y secciones: exige al menos una letra."""
+    if len(texto.strip()) < 2:
+        return (False, "Debe tener al menos 2 caracteres.")
+    if not re.search(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]", texto):
+        return (False, "Debe contener al menos una letra (no solo números o símbolos).")
+    return (True, "")
+
+
+def validar_solo_letras(texto):
+    """Para nombres de países, tipos de obra y géneros: solo letras, espacios y guiones."""
+    valor = texto.strip()
+    if not re.fullmatch(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ \-]+", valor):
+        return (False, "Solo se permiten letras, espacios y guiones (sin números ni símbolos).")
+    if len(re.findall(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]", valor)) < 2:
+        return (False, "Debe contener al menos 2 letras.")
+    return (True, "")
+
+
+def validar_nombre_persona(texto):
+    """Para nombres y apellidos de autores, usuarios y empleados (admite iniciales como 'H.')."""
+    valor = texto.strip()
+    if not re.fullmatch(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ .'\-]+", valor):
+        return (False, "El nombre solo puede contener letras, espacios, puntos, guiones o apóstrofos.")
+    if len(re.findall(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]", valor)) < 2:
+        return (False, "Debe contener al menos 2 letras.")
+    return (True, "")
+
+
+def validar_clave_pais(texto):
+    """Clave ISO de país: 2 a 5 letras sin números ni espacios."""
+    valor = texto.strip().upper()
+    if not re.fullmatch(r"[A-Z]{2,5}", valor):
+        return (False, "La clave de país debe tener entre 2 y 5 letras (ejemplo: MEX, ESP, USA).")
+    return (True, "")
+
+
+def validar_codigo_categoria(texto):
+    """Código de categoría (Dewey o texto): 2 a 5 caracteres alfanuméricos sin espacios."""
+    valor = texto.strip().upper()
+    if not re.fullmatch(r"[A-Z0-9]{2,5}", valor):
+        return (False, "El código debe tener entre 2 y 5 letras o números sin espacios (ej. 005, FIC).")
+    return (True, "")
+
+
+def validar_rfc(texto):
+    """Valida estructura real de RFC mexicano (12 caracteres empresa o 13 persona física)."""
+    valor = texto.strip().upper()
+    coincidencia = re.fullmatch(r"[A-ZÑ&]{3,4}(\d{2})(\d{2})(\d{2})[A-Z0-9]{3}", valor)
+    if not coincidencia:
+        return (
+            False,
+            "RFC inválido. Usa 12 o 13 caracteres (3-4 letras + fecha AAMMDD + 3 alfanuméricos, ej. DIS890412AB1).",
+        )
+    yy, mm, dd = int(coincidencia.group(1)), int(coincidencia.group(2)), int(coincidencia.group(3))
+    try:
+        anio_ref = 2000 + yy if yy <= (date.today().year % 100) else 1900 + yy
+        date(anio_ref, mm, dd)
+    except ValueError:
+        return (False, "La fecha AAMMDD contenida en el RFC no es una fecha calendario válida.")
+    return (True, "")
+
+
+def validar_telefono(texto):
+    """Valida teléfono con 10 a 15 dígitos reales y sin dígitos repetidos falsos."""
+    valor = texto.strip()
+    if not re.fullmatch(r"\+?[0-9\-\s()]+", valor):
+        return (False, "El teléfono solo puede contener números, espacios, guiones, paréntesis o '+' inicial.")
+    digitos = normalizar_telefono(valor)
+    if len(digitos) < 10 or len(digitos) > 15:
+        return (False, f"El teléfono debe contener entre 10 y 15 dígitos (ingresaste {len(digitos)}).")
+    if len(set(digitos)) == 1:
+        return (False, "El teléfono no puede consistir en el mismo dígito repetido.")
+    return (True, "")
+
+
+def validar_numero_domicilio(texto):
+    """Valida número exterior/interior (acepta S/N o combinaciones con al menos un dígito)."""
+    valor = texto.strip().upper()
+    if valor in ("S/N", "SN"):
+        return (True, "")
+    if not re.fullmatch(r"[A-Za-z0-9\-\s/]+", texto.strip()) or not re.search(r"\d", valor):
+        return (False, "Ingresa un número de domicilio válido (ejemplo: 412, 105-B o S/N).")
+    return (True, "")
+
+
+def validar_nombre_usuario(texto):
+    """Valida username de empleado: 3 a 30 caracteres sin espacios y no reservado."""
+    valor = texto.strip()
+    if valor.lower() in PALABRAS_RESERVADAS:
+        return (False, f"'{valor}' es una palabra reservada del sistema. Elige otro nombre de usuario.")
+    if not re.fullmatch(r"[A-Za-z0-9._\-]{3,30}", valor):
+        return (False, "El usuario debe tener entre 3 y 30 caracteres (solo letras, números, '.', '_' o '-').")
+    if not re.search(r"[A-Za-z]", valor):
+        return (False, "El nombre de usuario debe contener al menos una letra.")
+    return (True, "")
+
+
+def validar_contrasena(texto):
+    """Valida contraseña de empleado nuevo: 6 a 50 caracteres sin espacios."""
+    if len(texto) < 6:
+        return (False, "La contraseña debe tener al menos 6 caracteres.")
+    if " " in texto:
+        return (False, "La contraseña no debe contener espacios.")
+    return (True, "")
+
+
+# ==========================================================
+# PRESENTACIÓN EN CONSOLA
+# ==========================================================
 def mostrar_titulo(titulo, subtitulo=""):
     """Muestra un encabezado limpio en texto plano."""
     linea = "=" * max(55, len(titulo) + 4)
@@ -132,6 +280,9 @@ def mostrar_tabla(titulo, columnas, filas):
     print()
 
 
+# ==========================================================
+# ENTRADA VALIDADA CON NAVEGACIÓN
+# ==========================================================
 def _verificar_navegacion(texto, permitir_cancelar, permitir_atras):
     """Detecta comandos de navegación ('cancelar'/'salir' y 'atras'/'regresar')."""
     comando = texto.strip().lower()
@@ -148,8 +299,9 @@ def pedir_texto(
     valor_defecto=None,
     permitir_cancelar=True,
     permitir_atras=True,
+    validador=None,
 ):
-    """Solicita una cadena validando si es obligatoria, longitud máxima y navegación."""
+    """Solicita una cadena validando si es obligatoria, longitud máxima, dominio y navegación."""
     while True:
         sufijo = f" [{valor_defecto}]" if valor_defecto is not None else ""
         if not obligatorio and valor_defecto is None:
@@ -171,17 +323,23 @@ def pedir_texto(
             mostrar_error(f"Máximo {max_len} caracteres (ingresaste {len(valor)}).")
             continue
 
+        if validador is not None:
+            es_valido, msg_error = validador(valor)
+            if not es_valido:
+                mostrar_error(msg_error)
+                continue
+
         return valor
 
 
 def pedir_entero(
     etiqueta,
     minimo=None,
-    maximo=None,
+    maximo=LIMITE_INT_MYSQL,
     permitir_cancelar=True,
     permitir_atras=True,
 ):
-    """Solicita un número entero dentro de un rango opcional."""
+    """Solicita un número entero dentro de un rango seguro para MySQL INT."""
     while True:
         texto = input(f"{etiqueta}: ").strip()
         _verificar_navegacion(texto, permitir_cancelar, permitir_atras)
@@ -205,10 +363,11 @@ def pedir_entero(
 def pedir_decimal(
     etiqueta,
     minimo=Decimal("0.00"),
+    maximo=Decimal("999999.99"),
     permitir_cancelar=True,
     permitir_atras=True,
 ):
-    """Solicita un monto decimal exacto."""
+    """Solicita un monto decimal exacto dentro de rango seguro."""
     while True:
         texto = input(f"{etiqueta}: ").strip()
         _verificar_navegacion(texto, permitir_cancelar, permitir_atras)
@@ -222,6 +381,9 @@ def pedir_decimal(
         if monto < minimo:
             mostrar_error(f"El monto debe ser mayor o igual a {minimo}.")
             continue
+        if maximo is not None and monto > maximo:
+            mostrar_error(f"El monto debe ser menor o igual a {maximo}.")
+            continue
 
         return monto.quantize(Decimal("0.01"))
 
@@ -231,22 +393,51 @@ def pedir_fecha(
     permitir_hoy=True,
     permitir_cancelar=True,
     permitir_atras=True,
+    fecha_min=None,
+    fecha_max=None,
+    permitir_futuro=False,
 ):
-    """Solicita y valida inmediatamente una fecha en formato DD-MM-AAAA."""
+    """Solicita y valida inmediatamente una fecha DD-MM-AAAA controlando pasado y futuro."""
     hoy = date.today()
+    limite_sup = fecha_max
+    if not permitir_futuro:
+        limite_sup = hoy if limite_sup is None else min(limite_sup, hoy)
+
     while True:
         hoy_txt = hoy.strftime(FORMATO_FECHA)
-        ayuda = f" (DD-MM-AAAA, Enter = {hoy_txt})" if permitir_hoy else " (DD-MM-AAAA)"
+        puede_usar_hoy = (
+            permitir_hoy
+            and (fecha_min is None or hoy >= fecha_min)
+            and (limite_sup is None or hoy <= limite_sup)
+        )
+        ayuda = f" (DD-MM-AAAA, Enter = {hoy_txt})" if puede_usar_hoy else " (DD-MM-AAAA)"
         texto = input(f"{etiqueta}{ayuda}: ").strip()
         _verificar_navegacion(texto, permitir_cancelar, permitir_atras)
 
-        if not texto and permitir_hoy:
-            return hoy
+        if not texto and puede_usar_hoy:
+            fecha_ingresada = hoy
+        else:
+            try:
+                fecha_ingresada = datetime.strptime(texto, FORMATO_FECHA).date()
+            except ValueError:
+                mostrar_error("Formato de fecha inválido. Usa DD-MM-AAAA (ejemplo: 23-11-2026).")
+                continue
 
-        try:
-            return datetime.strptime(texto, FORMATO_FECHA).date()
-        except ValueError:
-            mostrar_error("Formato de fecha inválido. Usa DD-MM-AAAA (ejemplo: 23-11-2026).")
+        if not permitir_futuro and fecha_ingresada > hoy:
+            mostrar_error(f"No se permiten fechas futuras (fecha máxima permitida: {hoy_txt}).")
+            continue
+        if fecha_min is not None and fecha_ingresada < fecha_min:
+            mostrar_error(
+                f"La fecha no puede ser anterior al {formatear_fecha(fecha_min)}."
+            )
+            continue
+        if fecha_max is not None and fecha_ingresada > fecha_max:
+            mostrar_error(
+                f"La fecha no puede ser posterior al {formatear_fecha(fecha_max)}."
+            )
+            continue
+
+        return fecha_ingresada
 
 
 def confirmar(etiqueta, permitir_cancelar=True, permitir_atras=True):
