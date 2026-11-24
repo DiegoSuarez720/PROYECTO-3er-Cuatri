@@ -10,6 +10,8 @@
 #   [OPCION 1 -> 1 | OPCION 1 -> 2]  ->  obtener_localizacion_base()
 #   [OPCION 1 -> 1]  ->  registrar_obra_completa()
 #   [OPCION 1 -> 2]  ->  abastecer_obra_existente()
+#   [OPCION 1 -> 4]  ->  obtener_obra_para_editar()
+#   [OPCION 1 -> 4]  ->  actualizar_obra()
 #   [OPCION 2]  ->  listar_ejemplares_obra()
 #   [OPCION 2]  ->  asignar_localizacion_ejemplar()
 #   [OPCION 2]  ->  asignar_localizacion_todos()
@@ -283,6 +285,60 @@ class GestorObras(GestorBase):
 
             self.db.confirmar()
             return (inicio, fin)
+        except Error:
+            self.db.revertir()
+            raise
+        finally:
+            cursor.close()
+
+    # [OPCION 1 -> 4]
+    def obtener_obra_para_editar(self, isbn):
+        # Trae los datos de la obra que se pueden cambiar, con su tipo y categoria
+        cursor = self.db.obtener_cursor()
+        try:
+            sql = """
+                SELECT ob.isbn, ob.titulo, ob.subtitulo, ob.`año_publicacion` AS anio,
+                       ob.num_paginas, ob.tipo, tip.tipo_obra, ob.categoria, cat.genero
+                FROM obra AS ob
+                INNER JOIN tipo AS tip ON ob.tipo = tip.id_tipo
+                INNER JOIN categoria AS cat ON ob.categoria = cat.codigo
+                WHERE ob.isbn = %s
+            """
+            cursor.execute(sql, (isbn,))
+            return cursor.fetchone()
+        finally:
+            cursor.close()
+
+    # [OPCION 1 -> 4]
+    def actualizar_obra(
+        self, isbn, titulo, subtitulo, anio_publicacion, num_paginas, id_tipo, cod_categoria
+    ):
+        # Cambia los datos de una obra (el ISBN no se puede cambiar)
+        hoy = date.today()
+        if anio_publicacion < 1450 or anio_publicacion > hoy.year:
+            raise ValueError(f"El año de publicación debe estar entre 1450 y {hoy.year}.")
+
+        primera = self.obtener_fecha_primera_adquisicion(isbn)
+        if primera is not None and anio_publicacion > primera.year:
+            raise ValueError(
+                f"El año de publicación no puede ser mayor al año de la primera adquisición ({primera.year})."
+            )
+        if num_paginas <= 0 or num_paginas > 10000:
+            raise ValueError("El número de páginas debe estar entre 1 y 10,000.")
+
+        cursor = self.db.obtener_cursor()
+        try:
+            sql = """
+                UPDATE obra
+                SET titulo = %s, subtitulo = %s, `año_publicacion` = %s,
+                    num_paginas = %s, tipo = %s, categoria = %s
+                WHERE isbn = %s
+            """
+            cursor.execute(
+                sql,
+                (titulo, subtitulo, anio_publicacion, num_paginas, id_tipo, cod_categoria, isbn),
+            )
+            self.db.confirmar()
         except Error:
             self.db.revertir()
             raise

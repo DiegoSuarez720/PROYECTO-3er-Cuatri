@@ -8,7 +8,7 @@
 #   [OPCION 6 -> 3]  CATEGORIAS: listar_categorias, existe_categoria, existe_categoria_genero, crear_categoria
 #   [OPCION 6 -> 4]  AUTORES: listar_autores, existe_autor, existe_autor_nombre, crear_autor
 #   [OPCION 6 -> 5]  EDITORIALES: listar_editoriales, existe_editorial, existe_editorial_nombre, crear_editorial
-#   [OPCION 6 -> 6]  PROVEEDORES Y TELEFONOS: listar_proveedores, existe_proveedor, existe_telefono_proveedor, crear_proveedor, agregar_telefono_proveedor
+#   [OPCION 6 -> 6]  PROVEEDORES Y TELEFONOS: listar_proveedores, obtener_proveedor, actualizar_nombre_proveedor, existe_proveedor, existe_telefono_proveedor, crear_proveedor, agregar_telefono_proveedor
 #   [OPCION 6 -> 7]  LOCALIZACIONES: listar_localizaciones, existe_localizacion, existe_localizacion_datos, crear_localizacion
 #   [OPCION 6 -> 8]  USUARIOS Y TELEFONOS: listar_usuarios, existe_usuario, existe_usuario_datos, existe_telefono_usuario, crear_usuario, agregar_telefono_usuario
 #   [OPCION 6 -> 9]  EMPLEADOS: listar_empleados, existe_empleado_user, crear_empleado
@@ -311,6 +311,38 @@ class GestorCatalogos(GestorBase):
                 lista = telefonos_por_rfc.get(prov["RFC"])
                 prov["telefonos"] = ", ".join(lista) if lista else None
             return proveedores
+        finally:
+            cursor.close()
+
+    # [OPCION 6 -> 6]
+    def obtener_proveedor(self, rfc):
+        cursor = self.db.obtener_cursor()
+        try:
+            cursor.execute(
+                "SELECT RFC, nombre_empresa FROM proveedor WHERE RFC = %s",
+                (rfc,),
+            )
+            return cursor.fetchone()
+        finally:
+            cursor.close()
+
+    # [OPCION 6 -> 6]
+    def actualizar_nombre_proveedor(self, rfc, nuevo_nombre):
+        # Cambia solo el nombre de la empresa (el RFC no se puede cambiar)
+        rfc = rfc.strip().upper()
+        if self.obtener_proveedor(rfc) is None:
+            raise ValueError(f"No existe ningún proveedor con el RFC '{rfc}'.")
+
+        cursor = self.db.obtener_cursor()
+        try:
+            cursor.execute(
+                "UPDATE proveedor SET nombre_empresa = %s WHERE RFC = %s",
+                (nuevo_nombre.strip(), rfc),
+            )
+            self.db.confirmar()
+        except Error:
+            self.db.revertir()
+            raise
         finally:
             cursor.close()
 

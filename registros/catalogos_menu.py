@@ -1117,9 +1117,10 @@ class MenuCatalogos:
             mostrar_proveedores(self.catalogos.listar_proveedores())
             print("1. Registrar nuevo proveedor")
             print("2. Agregar teléfono a proveedor existente")
+            print("3. Editar nombre de proveedor existente")
             print("0. Volver\n")
             op = pedir_entero(
-                "Opción", minimo=0, maximo=2, permitir_cancelar=False, permitir_atras=False
+                "Opción", minimo=0, maximo=3, permitir_cancelar=False, permitir_atras=False
             )
             if op == 0:
                 return
@@ -1127,6 +1128,66 @@ class MenuCatalogos:
                 self._registrar_proveedores_continuo()
             elif op == 2:
                 self._agregar_telefono_proveedor_continuo()
+            elif op == 3:
+                self._editar_nombre_proveedor_continuo()
+
+    def _editar_nombre_proveedor_continuo(self):
+        # Cambia el nombre de la empresa de un proveedor que ya existe
+        while True:
+            limpiar_pantalla()
+            mostrar_titulo("EDITAR NOMBRE DE PROVEEDOR")
+            proveedores = self.catalogos.listar_proveedores()
+            if not proveedores:
+                mostrar_aviso("No hay proveedores registrados.")
+                pausar()
+                return
+            mostrar_proveedores(proveedores)
+            mostrar_ayuda_cancelar()
+
+            rfc = None
+            prov_actual = None
+            nuevo_nombre = None
+            paso = 0
+
+            try:
+                while paso < 2:
+                    try:
+                        if paso == 0:
+                            val = pedir_texto("RFC del proveedor", max_len=13).upper()
+                            info = self.catalogos.obtener_proveedor(val)
+                            if not info:
+                                mostrar_error("No existe ningún proveedor con ese RFC.")
+                                continue
+                            rfc = val
+                            prov_actual = info
+                            paso = 1
+                        elif paso == 1:
+                            nuevo_nombre = pedir_texto(
+                                "Nuevo nombre de la empresa",
+                                max_len=50,
+                                valor_defecto=prov_actual["nombre_empresa"],
+                                validador=validar_texto_descriptivo,
+                            )
+                            paso = 2
+                    except PasoAnterior:
+                        if paso == 0:
+                            mostrar_aviso("Regresando al menú de proveedores...")
+                            return
+                        paso -= 1
+                        mostrar_aviso("Regresando al campo anterior...")
+
+                self.catalogos.actualizar_nombre_proveedor(rfc, nuevo_nombre)
+                mostrar_exito("Nombre del proveedor actualizado correctamente.")
+                if not confirmar_continuar("¿Deseas editar el nombre de OTRO proveedor?"):
+                    return
+            except OperacionCancelada:
+                mostrar_aviso("Operación cancelada. Regresando al menú...")
+                pausar()
+                return
+            except (ValueError, Error) as e:
+                mostrar_error(f"Error: {e}")
+                if not confirmar_continuar("¿Deseas intentar de nuevo?"):
+                    return
 
     def _registrar_proveedores_continuo(self):
         while True:

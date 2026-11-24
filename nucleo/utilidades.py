@@ -338,17 +338,22 @@ def pedir_entero(
     maximo=LIMITE_INT_MYSQL,
     permitir_cancelar=True,
     permitir_atras=True,
+    valor_defecto=None,
 ):
-    """Pide un numero entero dentro de un rango que acepta MySQL."""
+    """Pide un numero entero dentro de un rango. Si hay valor_defecto, Enter lo deja igual."""
     while True:
-        texto = input(f"{etiqueta}: ").strip()
+        sufijo = f" [{valor_defecto}]" if valor_defecto is not None else ""
+        texto = input(f"{etiqueta}{sufijo}: ").strip()
         _verificar_navegacion(texto, permitir_cancelar, permitir_atras)
 
-        try:
-            numero = int(texto)
-        except ValueError:
-            mostrar_error("Debes ingresar un número entero válido.")
-            continue
+        if not texto and valor_defecto is not None:
+            numero = valor_defecto
+        else:
+            try:
+                numero = int(texto)
+            except ValueError:
+                mostrar_error("Debes ingresar un número entero válido.")
+                continue
 
         if minimo is not None and numero < minimo:
             mostrar_error(f"El valor debe ser mayor o igual a {minimo}.")

@@ -53,10 +53,11 @@ class MenuObras:
             print("1. Registrar obra nueva (tipo, categoría, autores, editorial, proveedor y ejemplares)")
             print("2. Abastecer más ejemplares a una obra ya registrada")
             print("3. Consultar información completa de una obra")
+            print("4. Actualizar datos de una obra")
             print("0. Volver\n")
 
             op = pedir_entero(
-                "Opción", minimo=0, maximo=3, permitir_cancelar=False, permitir_atras=False
+                "Opción", minimo=0, maximo=4, permitir_cancelar=False, permitir_atras=False
             )
             if op == 0:
                 return
@@ -66,6 +67,140 @@ class MenuObras:
                 self._abastecer_existente()
             elif op == 3:
                 self._consultar_obra_completa()
+            elif op == 4:
+                self._actualizar_obra()
+
+    def _actualizar_obra(self):
+        # Cambia titulo, subtitulo, anio, paginas, tipo y categoria de una obra
+        def validar_subtitulo_o_guion(texto):
+            # Acepta '-' para dejar el subtitulo vacio
+            if texto.strip() == "-":
+                return (True, "")
+            return validar_texto_descriptivo(texto)
+
+        while True:
+            limpiar_pantalla()
+            mostrar_titulo("ACTUALIZAR DATOS DE UNA OBRA")
+
+            obras = self.obras.listar_obras()
+            if not obras:
+                mostrar_aviso("No hay obras registradas en la base de datos.")
+                pausar()
+                return
+
+            mostrar_ayuda_cancelar()
+            anio_actual = date.today().year
+            anio_limite = anio_actual
+            isbn = None
+            obra_actual = None
+            titulo = None
+            subtitulo = None
+            anio = None
+            paginas = None
+            id_tipo = None
+            cod_categoria = None
+            paso = 0
+
+            try:
+                while paso < 7:
+                    try:
+                        if paso == 0:
+                            mostrar_obras(obras)
+                            val = pedir_texto("ISBN de la obra a editar", max_len=17).upper()
+                            info = self.obras.obtener_obra_para_editar(val)
+                            if not info:
+                                mostrar_error("No se encontró ninguna obra con ese ISBN.")
+                                continue
+                            isbn = val
+                            obra_actual = info
+                            primera = self.obras.obtener_fecha_primera_adquisicion(isbn)
+                            anio_limite = anio_actual
+                            if primera is not None:
+                                anio_limite = min(anio_actual, primera.year)
+                            print(
+                                "\n(Presiona Enter para conservar el valor actual | "
+                                "en subtítulo escribe '-' para dejarlo vacío)\n"
+                            )
+                            paso = 1
+                        elif paso == 1:
+                            titulo = pedir_texto(
+                                "Título (máx. 50 caracteres)",
+                                max_len=50,
+                                valor_defecto=obra_actual["titulo"],
+                                validador=validar_titulo,
+                            )
+                            paso = 2
+                        elif paso == 2:
+                            val_sub = pedir_texto(
+                                "Subtítulo (máx. 100 caracteres)",
+                                max_len=100,
+                                obligatorio=False,
+                                valor_defecto=obra_actual["subtitulo"] or None,
+                                validador=validar_subtitulo_o_guion,
+                            )
+                            subtitulo = None if val_sub == "-" else val_sub
+                            paso = 3
+                        elif paso == 3:
+                            anio = pedir_entero(
+                                f"Año de publicación (1450-{anio_limite})",
+                                minimo=1450,
+                                maximo=anio_limite,
+                                valor_defecto=obra_actual["anio"],
+                            )
+                            paso = 4
+                        elif paso == 4:
+                            paginas = pedir_entero(
+                                "Número de páginas (1-10000)",
+                                minimo=1,
+                                maximo=10000,
+                                valor_defecto=obra_actual["num_paginas"],
+                            )
+                            paso = 5
+                        elif paso == 5:
+                            print(f"Tipo de obra actual: {obra_actual['tipo_obra']}")
+                            if confirmar("¿Deseas cambiar el tipo de obra?"):
+                                try:
+                                    id_tipo = seleccionar_o_crear_tipo(self.catalogos)
+                                    paso = 6
+                                except PasoAnterior:
+                                    mostrar_aviso("Regresando a la pregunta del tipo de obra...")
+                                    continue
+                            else:
+                                id_tipo = obra_actual["tipo"]
+                                paso = 6
+                        elif paso == 6:
+                            print(f"Categoría actual: {obra_actual['genero']}")
+                            if confirmar("¿Deseas cambiar la categoría?"):
+                                try:
+                                    cod_categoria = seleccionar_o_crear_categoria(self.catalogos)
+                                    paso = 7
+                                except PasoAnterior:
+                                    mostrar_aviso("Regresando a la pregunta de la categoría...")
+                                    continue
+                            else:
+                                cod_categoria = obra_actual["categoria"]
+                                paso = 7
+                    except PasoAnterior:
+                        if paso == 0:
+                            mostrar_aviso("Regresando al menú anterior...")
+                            return
+                        paso -= 1
+                        mostrar_aviso("Regresando al paso anterior...")
+
+                self.obras.actualizar_obra(
+                    isbn, titulo, subtitulo, anio, paginas, id_tipo, cod_categoria
+                )
+                mostrar_exito(f"Obra '{titulo}' actualizada correctamente.")
+                if not confirmar_continuar("¿Deseas actualizar OTRA obra?"):
+                    return
+            except OperacionCancelada:
+                mostrar_aviso("Operación cancelada. Regresando al menú...")
+                pausar()
+                return
+            except (ValueError, Error) as e:
+                mostrar_error(f"No se pudo actualizar la obra: {e}")
+                if not confirmar_continuar("¿Deseas intentar actualizar otra obra?"):
+                    return
 
     def _consultar_obra_completa(self):
         while True:
