@@ -1,5 +1,7 @@
 """Archivo del login. Aqui se ve como el empleado escribe su usuario y contrasena para entrar."""
 
+import shutil
+
 from mysql.connector import Error
 
 from nucleo.utilidades import (
@@ -13,15 +15,66 @@ from nucleo.utilidades import (
     pedir_texto,
 )
 
+LOGO = r"""
+       @@@@@.                                                                           =@@@@       
+        @*#@@@@@@@@@@@@@@@@                                              -@@@@@@@@@@@@@@@@#@@       
+        @%*****#@@@@@@@@@@@@@@*                   @@@@@@@@@@@@@@@#*****@-       
+        @@*********#@@@@@@@@@@@@@@@@@@@@@@%*********#@        
+         @@@************@ @************@@@@@        
+           @@@@***********@ @**********%@@@@-           
+              @@@@**********@ @**********#@@@@@               
+                 @@@%*********@ @********#@@@@@                   
+                   @@@@*********@ @*******@@@@@                       
+                      @@@@*******@@@@@@@@@@@@@@@@@@@@@@@@                           
+                         @@@@*****@@@@@:                =+@                               
+                            @@@@*****@@                                                       
+                              @@@**@@@                                                        
+                                 @@@@%%@@@                                                          
+                                    @@ @@    @@ :@@@@@@@@@                            @@            
+                                      @    =@            @@@                       @@@@*            
+                                     @@   @@                @@@               =@@@@@**@             
+             @                         @@@                     @@@         @@@@@***@@             
+              @@@@@                                               @@     @@@***@              
+              @*#@@@@@@                                @@@@        @@  @@****@              
+              @@**@@@@@@@                               @@@@    @@@@****@@              
+               @****%@@@@+      @#          @@          @@@@@*****@               
+               @*****@@@@@@@     @           @@@.     @******#@               
+               @@*******@    @@@@@@@         @@@@@@@*******@@               
+                @*******@@@@@     @@@@@@@       @********@                
+                @********@   @@   -@  @@@@  @@******@@                
+                @@********@@@@    @@#@@   @@@@********@                 
+                 @@@@@@@@@@@@@@%****@@@@@:=%#@  @@****@@@@@@@@@@@@@@@                 
+                              +@@@@@@@@@@@@@@@@@@@ @@@@@@@@@@@@@@@@@@                               
+                                              %@@@@@@@@                                             
+         @@@@   @@@@   @@@@@   @@@@  @@@@@   @@@   @      @@@@@  @@@@   @@@@    @@@    @@@@         
+         @   @  @   @  @      @        @    @   @  @        @    @   @  @   @  @   @  @             
+         @@@@   @@@@   @@@@    @@@     @    @@@@@  @        @    @@@@   @@@@   @   @   @@@          
+         @      @  @   @          @    @    @   @  @        @    @   @  @  @   @   @      @         
+         @      @   @  @@@@@  @@@@     @    @   @  @@@@@  @@@@@  @@@@   @   @   @@@   @@@@          
+"""
+
+
+def mostrar_logo_centrado():
+    """Imprime el logo y el encabezado centrados segun el ancho actual de la consola."""
+    ancho_consola = shutil.get_terminal_size((100, 30)).columns
+    lineas = LOGO.strip("\n").splitlines()
+    ancho_logo = max(len(linea) for linea in lineas)
+    margen = max(0, (ancho_consola - ancho_logo) // 2)
+
+    for linea in lineas:
+        print(" " * margen + linea)
+
+    print(("=" * 75).center(ancho_consola))
+    print("SISTEMA DE PRÉSTAMOS BIBLIOTECARIOS".center(ancho_consola))
+    print("Inicio de sesión de empleados (escribe 'salir' en usuario para terminar)".center(ancho_consola))
+    print(("=" * 75).center(ancho_consola))
+
 
 def iniciar_sesion(auth):
     """Pide usuario y contrasena. Regresa el empleado si son correctos, o None si escribe 'salir'."""
     while True:
         limpiar_pantalla()
-        mostrar_titulo(
-            "SISTEMA DE PRÉSTAMOS BIBLIOTECARIOS",
-            "Inicio de sesión de empleados (escribe 'salir' en usuario para terminar)",
-        )
+        mostrar_logo_centrado()
         usuario = pedir_texto(
             "Usuario", max_len=30, permitir_cancelar=False, permitir_atras=False
         )
