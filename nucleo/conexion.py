@@ -1,4 +1,4 @@
-"""Módulo de conexión Singleton a MySQL (XAMPP) para prestamos_bibliotecarios."""
+"""Módulo de conexión a MySQL (XAMPP) para prestamos_bibliotecarios."""
 
 import mysql.connector
 from mysql.connector import Error
