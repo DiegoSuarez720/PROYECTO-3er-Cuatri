@@ -432,8 +432,8 @@ ALTER TABLE localizacion AUTO_INCREMENT = 2;
 INSERT IGNORE INTO localizacion (id_localizacion, estante, seccion, pasillo)
 VALUES (1, 0, 'Sin asignar / Recepcion', 0);
 
-INSERT IGNORE INTO empleado (id_empleado, nombre_pila, primer_ap, segundo_ap, nombre_user, `contraseña`)
-VALUES (1, 'Administrador', 'Sistema', NULL, 'admin', 'admin123');
+INSERT IGNORE INTO empleado (id_empleado, nombre_pila, primer_ap, segundo_ap, nombre_user, `contraseña`)VALUES 
+(1, 'Administrador', 'Sistema', NULL, 'admin', 'admin123'),
 
 -- ============================================================
 -- 1. LOCALIZACIONES FICTICIAS DE LA BIBLIOTECA
@@ -514,10 +514,10 @@ INSERT INTO ejemplar (obra, ejemplar, localizacion) VALUES
 -- 5. EMPLEADOS FICTICIOS
 -- ============================================================
 INSERT INTO empleado (id_empleado, nombre_pila, primer_ap, segundo_ap, nombre_user, `contraseña`) VALUES
-(2, 'Isela',  'Miranda',  'Hernandez', 'Angel',  'miranda123'),
-(3, 'Humberto', 'Carlos',  'Lopez', 'Camacho',  'humberto123'),
-(4, 'Diego',  'Aaron', 'Suarez', 'Garcia', 'diego123'),
-(5,'Angel', 'Javier', 'Vazquez', 'Jimenez','angel123')
+(2, 'Isela Miranda',  'Hernandez',  'Angel', 'miranda',  'miranda123'),
+(3, 'Humberto Carlos', 'Lopez',  'Camacho', 'humberto',  'humberto123'),
+(4, 'Diego Aaron',  'Suarez', 'Garcia', 'diego', 'diego123'),
+(5,'Angel Javier', 'Vazquez', 'Jimenez', 'angel','angel123')
 
 
 -- ============================================================
