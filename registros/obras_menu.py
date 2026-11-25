@@ -516,10 +516,102 @@ class MenuObras:
                 if not confirmar_continuar("¿Deseas intentar otro abastecimiento?"):
                     return
 
+    def _mostrar_ejemplares_obra(self, isbn, ejemplares):
+        # Muestra la tabla de ejemplares de una obra con su localizacion y estado
+        filas = [
+            (
+                e["ejemplar"],
+                e["localizacion"],
+                e["seccion"],
+                e["pasillo"],
+                e["estante"],
+                e["estado"],
+            )
+            for e in ejemplares
+        ]
+        mostrar_tabla(
+            f"Ejemplares de {isbn}",
+            ["Ejemplar #", "ID Loc.", "Sección", "Pasillo", "Estante", "Estado"],
+            filas,
+        )
+
+    def _leer_numeros_ejemplar(self, texto, validos):
+        # Convierte "2, 3,6" en una lista de enteros sin repetidos
+        # Regresa (lista, mensaje_de_error). Si todo esta bien, el error va vacio
+        partes = [p.strip() for p in texto.split(",")]
+        if any(p == "" for p in partes):
+            return ([], "No se permiten elementos vacíos (revisa las comas).")
+        for p in partes:
+            if not p.isdigit() or int(p) <= 0:
+                return ([], f"'{p}' no es un número entero positivo.")
+
+        numeros = list(dict.fromkeys(int(p) for p in partes))
+        no_existen = [n for n in numeros if n not in validos]
+        if no_existen:
+            return (
+                [],
+                f"Estos ejemplares no existen en esta obra: {no_existen}. "
+                f"Disponibles: {validos}",
+            )
+        return (numeros, "")
+
+    def _reubicar_ejemplares_seleccionados(self, isbn, validos):
+        # Reubica varios ejemplares de la MISMA obra sin volver a pedir el ISBN
+        # Regresa False si el usuario escribio 'atras' en la primera vuelta
+        # Regresa True cuando el usuario ya no quiere seguir con esta obra
+        def validar_numeros(texto):
+            numeros, error = self._leer_numeros_ejemplar(texto, validos)
+            return (error == "", error)
+
+        primera_vuelta = True
+        while True:
+            seleccionados = []
+            id_loc = None
+            regreso = False
+            paso = 0
+            while paso < 2:
+                try:
+                    if paso == 0:
+                        texto = pedir_texto(
+                            "Número(s) de ejemplar separados por coma (ej. 2 o 2,3,6,7)",
+                            max_len=100,
+                            validador=validar_numeros,
+                        )
+                        seleccionados = self._leer_numeros_ejemplar(texto, validos)[0]
+                        paso = 1
+                    elif paso == 1:
+                        id_loc = seleccionar_o_crear_localizacion(
+                            self.catalogos, permitir_sin_asignar=False
+                        )
+                        paso = 2
+                except PasoAnterior:
+                    if paso == 0:
+                        if primera_vuelta:
+                            return False
+                        regreso = True
+                        break
+                    paso -= 1
+                    mostrar_aviso("Regresando a pedir los números de ejemplar...")
+
+            if not regreso:
+                self.obras.asignar_localizacion_ejemplares(isbn, seleccionados, id_loc)
+                if len(seleccionados) == 1:
+                    mostrar_exito(f"Ejemplar #{seleccionados[0]} actualizado correctamente.")
+                else:
+                    lista = ", ".join(f"#{n}" for n in seleccionados)
+                    mostrar_exito(f"Ejemplares {lista} actualizados correctamente.")
+                self._mostrar_ejemplares_obra(isbn, self.obras.listar_ejemplares_obra(isbn))
+                primera_vuelta = False
+
+            if not confirmar_continuar(
+                "¿Deseas asignar localización a OTRO(S) ejemplar(es) de esta MISMA obra?"
+            ):
+                return True
+
     def flujo_asignar_localizacion(self):
         while True:
             limpiar_pantalla()
-            mostrar_titulo("ASIGNAR Y CONSULTAR LOCALIZACIÓN DE EJEMPLARES")
+            mostrar_titulo("ASIGNAR LOCALIZACIÓN A EJEMPLARES")
 
             obras = self.obras.listar_obras()
             if not obras:
@@ -530,13 +622,10 @@ class MenuObras:
             mostrar_ayuda_cancelar()
             isbn = None
             ejemplares = []
-            id_loc = None
-            aplicar_todos = False
-            num_ej = None
             paso = 0
 
             try:
-                while paso < 4:
+                while paso < 2:
                     try:
                         if paso == 0:
                             mostrar_obras(obras)
@@ -547,43 +636,34 @@ class MenuObras:
                                 continue
                             isbn = val
                             ejemplares = ejs
-                            filas = [
-                                (
-                                    e["ejemplar"],
-                                    e["localizacion"],
-                                    e["seccion"],
-                                    e["pasillo"],
-                                    e["estante"],
-                                    e["estado"],
-                                )
-                                for e in ejemplares
-                            ]
-                            mostrar_tabla(
-                                f"Ejemplares de {isbn}",
-                                ["Ejemplar #", "ID Loc.", "Sección", "Pasillo", "Estante", "Estado"],
-                                filas,
-                            )
+                            self._mostrar_ejemplares_obra(isbn, ejemplares)
                             paso = 1
                         elif paso == 1:
-                            id_loc = seleccionar_o_crear_localizacion(self.catalogos, 
-                                permitir_sin_asignar=False
-                            )
-                            paso = 2
-                        elif paso == 2:
                             aplicar_todos = confirmar(
-                                "¿Aplicar esta localización a TODOS los ejemplares de esta obra?"
+                                "¿Deseas asignar la misma localización a TODOS los ejemplares de esta obra?"
                             )
-                            paso = 4 if aplicar_todos else 3
-                        elif paso == 3:
-                            numeros_validos = [e["ejemplar"] for e in ejemplares]
-                            val_ej = pedir_entero("Número de ejemplar específico", minimo=1)
-                            if val_ej not in numeros_validos:
-                                mostrar_error(
-                                    f"Ese ejemplar no existe. Disponibles en esta obra: {numeros_validos}"
+                            if aplicar_todos:
+                                try:
+                                    id_loc = seleccionar_o_crear_localizacion(
+                                        self.catalogos, permitir_sin_asignar=False
+                                    )
+                                except PasoAnterior:
+                                    mostrar_aviso("Regresando a la pregunta de TODOS los ejemplares...")
+                                    continue
+                                afectados = self.obras.asignar_localizacion_todos(isbn, id_loc)
+                                mostrar_exito(
+                                    f"Se actualizaron {afectados} ejemplares a la localización #{id_loc}."
                                 )
-                                continue
-                            num_ej = val_ej
-                            paso = 4
+                                self._mostrar_ejemplares_obra(
+                                    isbn, self.obras.listar_ejemplares_obra(isbn)
+                                )
+                                paso = 2
+                            else:
+                                validos = [e["ejemplar"] for e in ejemplares]
+                                if self._reubicar_ejemplares_seleccionados(isbn, validos):
+                                    paso = 2
+                                else:
+                                    mostrar_aviso("Regresando a la pregunta de TODOS los ejemplares...")
                     except PasoAnterior:
                         if paso == 0:
                             mostrar_aviso("Regresando al menú anterior...")
@@ -591,17 +671,8 @@ class MenuObras:
                         paso -= 1
                         mostrar_aviso("Regresando al paso anterior...")
 
-                if aplicar_todos:
-                    afectados = self.obras.asignar_localizacion_todos(isbn, id_loc)
-                    mostrar_exito(
-                        f"Se actualizaron {afectados} ejemplares a la localización #{id_loc}."
-                    )
-                else:
-                    self.obras.asignar_localizacion_ejemplar(isbn, num_ej, id_loc)
-                    mostrar_exito(f"Ejemplar #{num_ej} actualizado a la localización #{id_loc}.")
-
                 if not confirmar_continuar(
-                    "¿Deseas asignar localización a OTRA obra o ejemplar?"
+                    "¿Deseas asignar localización a ejemplares de OTRA obra?"
                 ):
                     return
             except OperacionCancelada:

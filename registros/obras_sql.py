@@ -14,6 +14,7 @@
 #   [OPCION 1 -> 4]  ->  actualizar_obra()
 #   [OPCION 2]  ->  listar_ejemplares_obra()
 #   [OPCION 2]  ->  asignar_localizacion_ejemplar()
+#   [OPCION 2]  ->  asignar_localizacion_ejemplares()
 #   [OPCION 2]  ->  asignar_localizacion_todos()
 
 from datetime import date
@@ -400,6 +401,26 @@ class GestorObras(GestorBase):
             afectados = cursor.rowcount
             self.db.confirmar()
             return afectados
+        except Error:
+            self.db.revertir()
+            raise
+        finally:
+            cursor.close()
+
+    # [OPCION 2]
+    def asignar_localizacion_ejemplares(self, isbn, numeros_ejemplares, id_localizacion):
+        # Cambia la localizacion de varios ejemplares de una obra en una sola transaccion
+        cursor = self.db.obtener_cursor()
+        try:
+            actualizados = 0
+            for num_ejemplar in numeros_ejemplares:
+                cursor.execute(
+                    "UPDATE ejemplar SET localizacion = %s WHERE obra = %s AND ejemplar = %s",
+                    (id_localizacion, isbn, num_ejemplar),
+                )
+                actualizados += 1
+            self.db.confirmar()
+            return actualizados
         except Error:
             self.db.revertir()
             raise
