@@ -524,6 +524,12 @@ USE prestamos_bibliotecarios;
 UPDATE prestamo SET empleado = 5 WHERE empleado = 1;
 UPDATE devolucion SET empleado = 5 WHERE empleado = 1;
 
+USE prestamos_bibliotecarios;
+
+-- Cambia "Administrador Sistema" (1) por Angel Javier (5) en TODOS los prestamos y devoluciones
+UPDATE prestamo SET empleado = 5 WHERE empleado = 1;
+UPDATE devolucion SET empleado = 5 WHERE empleado = 1;
+
 
 -- ============================================================
 -- 6. USUARIOS Y TELÉFONOS FICTICIOS
