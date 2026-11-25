@@ -519,6 +519,11 @@ INSERT INTO empleado (id_empleado, nombre_pila, primer_ap, segundo_ap, nombre_us
 (4, 'Diego Aaron',  'Suarez', 'Garcia', 'diego', 'diego123'),
 (5,'Angel Javier', 'Vazquez', 'Jimenez', 'angel','angel123')
 
+USE prestamos_bibliotecarios;
+
+UPDATE prestamo SET empleado = 5 WHERE empleado = 1;
+UPDATE devolucion SET empleado = 5 WHERE empleado = 1;
+
 
 -- ============================================================
 -- 6. USUARIOS Y TELÉFONOS FICTICIOS

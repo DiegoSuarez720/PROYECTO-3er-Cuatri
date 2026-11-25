@@ -519,7 +519,7 @@ class MenuObras:
     def flujo_asignar_localizacion(self):
         while True:
             limpiar_pantalla()
-            mostrar_titulo("ASIGNAR LOCALIZACIÓN A EJEMPLARES")
+            mostrar_titulo("ASIGNAR Y CONSULTAR LOCALIZACIÓN DE EJEMPLARES")
 
             obras = self.obras.listar_obras()
             if not obras:

@@ -71,7 +71,7 @@ class AplicacionBiblioteca:
                 f"Empleado en sesión: {self.empleado_activo.nombre_completo} (@{self.empleado_activo.nombre_user})",
             )
             print("1. Obras y abastecimiento")
-            print("2. Asignar localización a ejemplares")
+            print("2. Asignar y ver localización de ejemplares")
             print("3. Préstamos de ejemplares")
             print("4. Devoluciones de ejemplares")
             print("5. Multas por devolución tardía")
