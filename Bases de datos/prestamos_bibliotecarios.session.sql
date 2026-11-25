@@ -436,7 +436,7 @@ INSERT IGNORE INTO empleado (id_empleado, nombre_pila, primer_ap, segundo_ap, no
 (1, 'Administrador', 'Sistema', NULL, 'admin', 'admin123'),
 
 -- ============================================================
--- 1. LOCALIZACIONES FICTICIAS DE LA BIBLIOTECA
+-- 1. LOCALIZACIONES DE LA BIBLIOTECA
 -- ============================================================
 INSERT INTO localizacion (id_localizacion, estante, seccion, pasillo) VALUES
 (2, 1, 'Historia y Ciencias Sociales', 1),
@@ -447,7 +447,7 @@ INSERT INTO localizacion (id_localizacion, estante, seccion, pasillo) VALUES
 (7, 2, 'Arte y Economía', 3);
 
 -- ============================================================
--- 2. PROVEEDORES Y TELÉFONOS FICTICIOS
+-- 2. PROVEEDORES Y TELÉFONOS
 -- ============================================================
 INSERT INTO proveedor (RFC, nombre_empresa) VALUES
 ('DIS890412AB1', 'Distribuidora Mexicana de Libros S.A. de C.V.'),
@@ -464,7 +464,7 @@ INSERT INTO telefono_proveedor (telefono, proveedor) VALUES
 ('55-5207-9401', 'IMP180905JK5');
 
 -- ============================================================
--- 3. ABASTECIMIENTO_OBRA FICTICIO (4 EJEMPLARES POR OBRA = 60)
+-- 3. ABASTECIMIENTO_OBRA (4 EJEMPLARES POR OBRA) 
 -- ============================================================
 INSERT INTO abastecimiento_obra (proveedor, obra, fecha_adquisicion, cantidad) VALUES
 ('COM030715EF3', '978-968-12-1139-4', '2026-09-10', 4),
