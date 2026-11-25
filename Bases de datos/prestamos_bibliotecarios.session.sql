@@ -616,6 +616,22 @@ WHERE devolucion = (
       AND ejemplar = 3
 );
 
+
+USE prestamos_bibliotecarios;
+
+-- 1. Borra cualquier multa de los folios 17 y 18 (usa IN en lugar de =)
+DELETE FROM multa
+WHERE devolucion IN (
+    SELECT id_devolucion FROM devolucion WHERE prestamo IN (17, 18)
+);
+
+-- 2. Borra el folio 18 duplicado respetando el orden de llaves foraneas
+DELETE FROM devolucion WHERE prestamo = 18;
+DELETE FROM prestamo_ejemplar WHERE prestamo = 18;
+DELETE FROM prestamo WHERE folio = 18;
+
+-- 3. Deja el consecutivo listo para que la multa generada vuelva a ser la #4
+ALTER TABLE multa AUTO_INCREMENT = 4;
 -- ============================================================
 -- 8. PRÉSTAMO_EJEMPLAR (ENLAZADO A LAS 15 OBRAS REALES EN ESPAÑOL)
 -- ============================================================
