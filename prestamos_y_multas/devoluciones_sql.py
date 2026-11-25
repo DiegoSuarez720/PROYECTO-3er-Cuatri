@@ -204,10 +204,14 @@ class GestorDevoluciones(GestorBase):
                        ob.isbn,
                        dev.ejemplar,
                        ob.titulo,
-                       ob.subtitulo
+                       ob.subtitulo,
+                       CONCAT(us.nombre_pila, ' ', us.primer_ap, ' ', IFNULL(us.segundo_ap, '')) AS usuario,
+                       CONCAT(emp.nombre_pila, ' ', emp.primer_ap, ' ', IFNULL(emp.segundo_ap, '')) AS empleado
                 FROM devolucion AS dev
                 INNER JOIN prestamo AS pres ON dev.prestamo = pres.folio
                 INNER JOIN obra AS ob ON dev.obra = ob.isbn
+                INNER JOIN usuario AS us ON pres.usuario = us.id_usuario
+                INNER JOIN empleado AS emp ON dev.empleado = emp.id_empleado
                 WHERE dev.fecha_devolucion = %s
             """
             if filtro == "a_tiempo":
@@ -216,6 +220,10 @@ class GestorDevoluciones(GestorBase):
                 sql += " AND dev.fecha_devolucion > pres.fecha_limite"
             sql += " ORDER BY pres.folio, dev.ejemplar"
             cursor.execute(sql, (fecha,))
-            return cursor.fetchall()
+            filas = cursor.fetchall()
+            for fila in filas:
+                fila["usuario"] = fila["usuario"].strip()
+                fila["empleado"] = fila["empleado"].strip()
+            return filas
         finally:
             cursor.close()

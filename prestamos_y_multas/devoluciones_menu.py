@@ -125,6 +125,8 @@ class MenuDevoluciones:
                             r["ejemplar"],
                             r["titulo"],
                             r["subtitulo"],
+                            r["usuario"],
+                            r["empleado"],
                         )
                         for r in registros
                     ]
@@ -139,6 +141,8 @@ class MenuDevoluciones:
                             "Ej. #",
                             "Título",
                             "Subtítulo",
+                            "Usuario",
+                            "Empleado",
                         ],
                         filas,
                     )
