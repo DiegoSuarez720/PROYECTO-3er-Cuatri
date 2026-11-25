@@ -607,6 +607,14 @@ VALUES ('978-607-442-288-7', 3, @folio_demo);
 --    NO se inserta en la tabla multa a proposito para generarla desde Python
 INSERT INTO devolucion (fecha_devolucion, empleado, obra, ejemplar, prestamo)
 VALUES ('2026-11-19', 3, '978-607-442-288-7', 3, @folio_demo);
+--Borrar la multa de demostracion de que se genera de manera automatica--
+DELETE FROM multa
+WHERE devolucion = (
+    SELECT id_devolucion FROM devolucion
+    WHERE fecha_devolucion = '2026-11-19'
+      AND obra = '978-607-442-288-7'
+      AND ejemplar = 3
+);
 
 -- ============================================================
 -- 8. PRÉSTAMO_EJEMPLAR (ENLAZADO A LAS 15 OBRAS REALES EN ESPAÑOL)
