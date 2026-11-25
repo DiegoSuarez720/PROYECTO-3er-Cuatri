@@ -487,7 +487,7 @@ INSERT INTO abastecimiento_obra (proveedor, obra, fecha_adquisicion, cantidad) V
 ('DIS890412AB1', '978-607-31-0492-0', '2026-10-15', 4);
 
 -- ============================================================
--- 4. EJEMPLARES FICTICIOS (4 COPIAS POR OBRA = 60 TOTAL)
+-- 4. EJEMPLARES (4 COPIAS POR OBRA)
 --    La última obra queda en Loc #1 (Sin asignar) para probar Registro 2
 -- ============================================================
 INSERT INTO ejemplar (obra, ejemplar, localizacion) VALUES
@@ -589,6 +589,24 @@ INSERT INTO prestamo (folio, fecha_salida, fecha_limite, empleado, usuario) VALU
 (14, '2026-11-10', '2026-11-24', 1, 2),
 (15, '2026-11-10', '2026-11-24', 2, 3),
 (16, '2026-11-20', '2026-12-04', 1, 5);
+
+
+USE prestamos_bibliotecarios;
+
+-- 1. Prestamo (salida 01-11-2026, limite 15-11-2026, empleado #4 Diego)
+INSERT INTO prestamo (fecha_salida, fecha_limite, empleado, usuario)
+VALUES ('2026-11-01', '2026-11-15', 4, 6);
+
+SET @folio_demo = LAST_INSERT_ID();
+
+-- 2. Ejemplar prestado (Fisica universitaria Vol. 1, ejemplar #3)
+INSERT INTO prestamo_ejemplar (obra, ejemplar, prestamo)
+VALUES ('978-607-442-288-7', 3, @folio_demo);
+
+-- 3. Devolucion tardia (19-11-2026 = 4 dias tarde, recibida por empleado #3 Humberto)
+--    NO se inserta en la tabla multa a proposito para generarla desde Python
+INSERT INTO devolucion (fecha_devolucion, empleado, obra, ejemplar, prestamo)
+VALUES ('2026-11-19', 3, '978-607-442-288-7', 3, @folio_demo);
 
 -- ============================================================
 -- 8. PRÉSTAMO_EJEMPLAR (ENLAZADO A LAS 15 OBRAS REALES EN ESPAÑOL)

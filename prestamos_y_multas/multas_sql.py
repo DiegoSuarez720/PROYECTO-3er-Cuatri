@@ -14,7 +14,7 @@ from mysql.connector import Error
 
 from nucleo.conexion import GestorBase
 
-
+# IMPORTANTE
 # Cobro fijo por cada dia de retraso
 TARIFA_MULTA_DIA = Decimal("15.00")
 
